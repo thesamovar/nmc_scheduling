@@ -15,7 +15,7 @@ num_talks = 1_000
 num_days = 5
 num_times = num_days*24
 # (p, start_time, end_time)
-timezones = [(0.3, 0, 10), (0.3, 4, 14), (0.3, 8, 18), (0.1, 0, 24)]
+timezones = [(0.25, 0, 10), (0.25, 4, 14), (0.25, 8, 18), (0.25, 0, 24)]
 mean_available_per_day = stats.uniform(0, 10)
 available_per_day = lambda mu: stats.binom(10., mu/10.)
 
