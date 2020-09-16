@@ -35,13 +35,19 @@ free_times = []
 for i in range(num_participants):
     _, start, end = timezones[participant_timezones[i]]
     mu = mean_available_per_day.rvs(size=1)
-    n_avail = available_per_day(mu).rvs(size=num_days)
+    
+    # Disallow cases where talks have zero availability
+    n_avail = 0
+    while np.sum(n_avail) == 0:
+        n_avail = available_per_day(mu).rvs(size=num_days)
+
     I = np.arange(start, end) % 24
     free = []
     for day in range(num_days):
         shuffle(I)
         free.extend(day*24+I[:n_avail[day]])
     free_times.append(np.array(free, dtype=int))
+
 
 #%% Generate talks and preferences
 participant_clusters = stats.randint(0, clusters).rvs(size=num_participants)
@@ -71,5 +77,9 @@ plt.xlim(0, 24)
 #plt.savefig('free_times.png')
 
 #%% Dump data to pickle file
-data = {'free_times': free_times, 'prefs': prefs}
-pickle.dump(data, open('times_and_prefs.pickle', 'wb'))
+data = {'free_times': free_times, 
+        'prefs': prefs, 
+        'talk_clusters': talk_clusters, 
+        'talk_interestingness': talk_interestingness}
+with open('times_and_prefs.pickle', 'wb') as f:
+    pickle.dump(data, f)
