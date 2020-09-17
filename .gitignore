@@ -128,5 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .vscode/settings.json
-free_times.png
-times_and_prefs.pickle
+*.png
+*.pickle
