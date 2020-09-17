@@ -16,6 +16,7 @@ def generate_synthetic_data(
 
         # Time slots and zones
         num_days = 5,
+        hours_per_day = 24,
         # (p, start_time, end_time)
         timezones = [(0.25, 0, 10), (0.25, 4, 14), (0.25, 8, 18), (0.25, 14, 28)],
         mean_available_per_day = stats.uniform(0, 10),
@@ -29,7 +30,7 @@ def generate_synthetic_data(
         talk_interestingness_dist = stats.uniform(0, 1),
         ):
 
-    num_times = num_days*24
+    num_times = num_days*hours_per_day
 
     # Generate free times for all participants
     timezone_probs, _, _ = zip(*timezones)
@@ -44,11 +45,11 @@ def generate_synthetic_data(
         while np.sum(n_avail) == 0:
             n_avail = available_per_day(mu).rvs(size=num_days)
 
-        I = np.arange(start, end) % 24
+        I = np.arange(start, end) % hours_per_day
         free = []
         for day in range(num_days):
             shuffle(I)
-            free.extend(day*24+I[:n_avail[day]])
+            free.extend(day*hours_per_day+I[:n_avail[day]])
         free_times.append(np.array(free, dtype=int))
 
 
@@ -70,7 +71,9 @@ def generate_synthetic_data(
             'talk_clusters': talk_clusters, 
             'talk_interestingness': talk_interestingness,
             'num_times': num_times,
-            'num_talks': num_talks}
+            'num_talks': num_talks,
+            'hours_per_day': hours_per_day,
+            }
 
     return data
 
@@ -96,17 +99,18 @@ def visualise_data(data):
     plt.bar(np.arange(num_times), available_count, width=1.0)
     plt.xlim(0, 24)
 
-data = generate_synthetic_data(num_participants=100, num_talks=10)
-visualise_data(data)
-with open('times_and_prefs_100.pickle', 'wb') as f:
-    pickle.dump(data, f)
+if __name__=='__main__':
+    data = generate_synthetic_data(num_participants=100, num_talks=10)
+    visualise_data(data)
+    with open('times_and_prefs_100.pickle', 'wb') as f:
+        pickle.dump(data, f)
 
-data = generate_synthetic_data(num_participants=1000, num_talks=100)
-visualise_data(data)
-with open('times_and_prefs_1k.pickle', 'wb') as f:
-    pickle.dump(data, f)
+    data = generate_synthetic_data(num_participants=1000, num_talks=100)
+    visualise_data(data)
+    with open('times_and_prefs_1k.pickle', 'wb') as f:
+        pickle.dump(data, f)
 
-data = generate_synthetic_data(num_participants=10_000, num_talks=1_000)
-visualise_data(data)
-with open('times_and_prefs_10k.pickle', 'wb') as f:
-    pickle.dump(data, f)
+    data = generate_synthetic_data(num_participants=10_000, num_talks=1_000)
+    visualise_data(data)
+    with open('times_and_prefs_10k.pickle', 'wb') as f:
+        pickle.dump(data, f)

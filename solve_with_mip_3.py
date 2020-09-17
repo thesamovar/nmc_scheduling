@@ -4,10 +4,22 @@ import pickle
 import mip
 from collections import defaultdict
 import time
+from generate_synthetic_data import generate_synthetic_data
+from scipy import stats
 
 #%% Load data
 start_time = time.time()
-data = pickle.load(open('times_and_prefs_10k.pickle', 'rb'))
+
+#data = pickle.load(open('times_and_prefs_10k.pickle', 'rb'))
+
+data = generate_synthetic_data(
+    num_participants=1000, num_talks=100, hours_per_day=8, num_days=2,
+    timezones=[(1/3, 0, 4), (1/3, 0, 8), (1/3, 4, 8)],
+    available_per_day=lambda mu: stats.binom(3, 1.0),
+    clusters=1, prob_within_cluster=.25, prob_outside_cluster=1.0,
+    talk_interestingness_dist=stats.uniform(1.0, 0.0),
+    )
+
 free_times = data['free_times']
 prefs = data['prefs']
 talk_clusters = data['talk_clusters']
@@ -56,8 +68,8 @@ print(f"  S: {len(S)}, V: {len(V)}, total {len(S)+len(V)}")
 # only assign a viewer to a talk in a given slot if it has been assigned there
 nconstraints = 0
 for (p, t, s) in V.keys():
-    #model += V[p, t, s]<=S[t, s]
-    model.add_lazy_constr(V[p, t, s]<=S[t, s])
+    model += V[p, t, s]<=S[t, s]
+    #model.add_lazy_constr(V[p, t, s]<=S[t, s])
     nconstraints += 1
 # only assign a talk to one slot
 for t in range(num_talks):
@@ -66,8 +78,8 @@ for t in range(num_talks):
     nconstraints += 1
 # can only watch at most one talk per slot
 for (p, s) in A.keys():
-    #model += mip.xsum(V[p, t, s] for t in range(num_talks) if (p, t, s) in V)<=1
-    model.add_lazy_constr(mip.xsum(V[p, t, s] for t in range(num_talks) if (p, t, s) in V)<=1)
+    model += mip.xsum(V[p, t, s] for t in range(num_talks) if (p, t, s) in V)<=1
+    #model.add_lazy_constr(mip.xsum(V[p, t, s] for t in range(num_talks) if (p, t, s) in V)<=1)
     nconstraints += 1
 
 print(f"Finished setting up constraints. {int(time.time()-start_time)}s")
