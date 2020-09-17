@@ -7,7 +7,7 @@ import time
 
 #%% Load data
 start_time = time.time()
-data = pickle.load(open('times_and_prefs_10k.pickle', 'rb'))
+data = pickle.load(open('times_and_prefs_1k.pickle', 'rb'))
 free_times = data['free_times']
 prefs = data['prefs']
 talk_clusters = data['talk_clusters']
