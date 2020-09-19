@@ -54,7 +54,8 @@ def generate_synthetic_data(
 
 
     # Generate talks and preferences
-    participant_clusters = stats.randint(0, clusters).rvs(size=num_participants)
+    # Make it so there are more participants in cluster 0 than 1, more in 1 than 2, etc.
+    participant_clusters = ((stats.uniform(0, 1).rvs(size=num_participants) ** 2) * clusters).astype(np.int)
     talk_clusters = participant_clusters[:num_talks] # assume speakers prefer their own topic
     talk_interestingness = talk_interestingness_dist.rvs(size=num_talks)
     prefs = []
@@ -69,6 +70,7 @@ def generate_synthetic_data(
     data = {'free_times': free_times, 
             'prefs': prefs, 
             'talk_clusters': talk_clusters, 
+            'participant_clusters': participant_clusters,
             'talk_interestingness': talk_interestingness,
             'num_times': num_times,
             'num_talks': num_talks,
