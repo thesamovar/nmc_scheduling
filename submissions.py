@@ -42,9 +42,16 @@ if __name__=='__main__':
     import numpy as np
 
     submissions = Submissions.from_csv()
+    df = submissions.df
 
-    print(submissions.df.talk_format.value_counts())
-    print(submissions.df.theme.value_counts())
+    print(df.talk_format.value_counts())
+    print()
+    print(df.theme.value_counts())
+    print()
+    print("The following people have got too few available times:")
+    for sub in submissions:
+        if not hasattr(sub, 'available') or len(sub.available)<5:
+            print(f" - {sub.fullname} <{sub.email}>")
     
     all_available = np.zeros(24*5+12)
     for sub in submissions:
