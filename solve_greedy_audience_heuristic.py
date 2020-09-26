@@ -93,7 +93,12 @@ def greedy_solution(data, talks_per_hour=2, verbose=False):
         for (t, s) in talk_assignment.items():
             tracks[s] += 1
         max_tracks = max(tracks.values())
-        print(f"Maximum number of tracks is {max_tracks}")
+        print(f"  Maximum number of tracks is {max_tracks}")
+        audience_size = np.zeros(num_talks)
+        for p, sched in participant_schedule.items():
+            for (t, s) in sched:
+                audience_size[t] += 1
+        print(f"  Audience size min {audience_size.min()}, max {audience_size.max()}, mean {audience_size.mean()}, std {audience_size.std()}")
 
     #%% verify found solution
     for t, s in talk_assignment.items():
@@ -107,7 +112,7 @@ def greedy_solution(data, talks_per_hour=2, verbose=False):
     return talk_assignment, participant_schedule
 
 if __name__=='__main__':
-    data = pickle.load(open('times_and_prefs_1k.pickle', 'rb'))
+    data = pickle.load(open('times_and_prefs_10k.pickle', 'rb'))
 
     # data = generate_synthetic_data(
     #     num_participants=1000, num_talks=100, hours_per_day=8, num_days=2,
@@ -131,4 +136,13 @@ if __name__=='__main__':
     #         talk_interestingness_dist = stats.uniform(0, 1),
     #         )
 
-    greedy_solution(data, talks_per_hour=2, verbose=True)
+    import matplotlib.pyplot as plt
+    num_talks = data['num_talks']
+    talk_assignment, participant_schedule = greedy_solution(data, talks_per_hour=2, verbose=True)
+    audience_size = np.zeros(num_talks)
+    for p, sched in participant_schedule.items():
+        for (t, s) in sched:
+            audience_size[t] += 1
+    plt.hist(audience_size, label=method, bins=20)
+    plt.legend(loc='best')
+    plt.show()

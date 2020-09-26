@@ -106,19 +106,21 @@ print(f"  Number of constraints is {nconstraints}")
 model.objective = mip.maximize(mip.xsum(V.values())/talks_per_hour)
 
 #%% Generate greedy solution to initialise
-print("Start finding greedy solution.")
-greedy_talk_assignment, greedy_participant_schedule = greedy_solution(data, talks_per_hour=talks_per_hour, verbose=True)
-init_solution = []
-for t, s in greedy_talk_assignment.items():
-    init_solution.append((S[t, s], 1))
-for p, sched in greedy_participant_schedule.items():
-    for (t, s) in sched:
-        init_solution.append((V[p, t, s], 1))
-model.start = init_solution
-print(f"Finished finding greedy solution. {int(time.time()-start_time)}s")
+if 0:
+    print("Start finding greedy solution.")
+    greedy_talk_assignment, greedy_participant_schedule = greedy_solution(data, talks_per_hour=talks_per_hour, verbose=True)
+    init_solution = []
+    for t, s in greedy_talk_assignment.items():
+        init_solution.append((S[t, s], 1))
+    for p, sched in greedy_participant_schedule.items():
+        for (t, s) in sched:
+            init_solution.append((V[p, t, s], 1))
+    model.start = init_solution
+    print(f"Finished finding greedy solution. {int(time.time()-start_time)}s")
 
 #%% Solve it
-model.optimize(max_seconds=60*5)
+opt_status = model.optimize(max_seconds=60*5, relax=True)
+print(opt_status)
 
 #%% Show the solution
 talk_assignment = dict()
