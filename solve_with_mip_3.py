@@ -13,7 +13,7 @@ start_time = time.time()
 
 talks_per_hour = 1
 
-data = pickle.load(open('times_and_prefs_10k.pickle', 'rb'))
+data = pickle.load(open('times_and_prefs_2k_500.pickle', 'rb'))
 
 # data = generate_synthetic_data(
 #     num_participants=1000, num_talks=100, hours_per_day=8, num_days=2,
@@ -106,7 +106,7 @@ print(f"  Number of constraints is {nconstraints}")
 model.objective = mip.maximize(mip.xsum(V.values())/talks_per_hour)
 
 #%% Generate greedy solution to initialise
-if 0:
+if 1:
     print("Start finding greedy solution.")
     greedy_talk_assignment, greedy_participant_schedule = greedy_solution(data, talks_per_hour=talks_per_hour, verbose=True)
     init_solution = []
@@ -118,27 +118,37 @@ if 0:
     model.start = init_solution
     print(f"Finished finding greedy solution. {int(time.time()-start_time)}s")
 
-#%% Solve it
-opt_status = model.optimize(max_seconds=60*5, relax=True)
+#%% Solve it with relaxed model first to get upper bound
+opt_status_relax = model.optimize(relax=True)
+print(opt_status_relax)
+relaxed_opt = model.objective_value
+
+#%% Now solve it with ILP to get best integer solution
+#opt_status = model.optimize(max_seconds=60*5, relax=False)
+opt_status = model.optimize(relax=False)
 print(opt_status)
 
 #%% Show the solution
 talk_assignment = dict()
 participant_schedule = defaultdict(list)
+watch_hours_on_schedule = 0
 for t in range(num_talks):
     for s in range(num_times):
         if (t, s) in S and S[t, s].x:
             talk_assignment[t] = s
             break
-    print(f'Assign talk {t} to slot {s}')
+    #print(f'Assign talk {t} to slot {s}')
     can_watch = []
     for p in range(num_participants):
         if (p, t, s) in V and V[p, t, s].x:
             can_watch.append(p)
             participant_schedule[p].append((t, s))
-    print(f'   Participants that can watch: {can_watch}')
+            watch_hours_on_schedule += 1
+    #print(f'   Participants that can watch: {can_watch}')
 
+print(f'Number of watch hours on schedule is {watch_hours_on_schedule}')
 print(f'Number of watch hours is {int(model.objective_value)} of max possible {ideal_hours}, or {100.0*model.objective_value/ideal_hours:.1f}%')
+print(f'   - watched hours is {100*model.objective_value/relaxed_opt:.1f}% of relaxed relaxed optimum {relaxed_opt}')
 print(f"Talks assigned: {len(talk_assignment)} of {num_talks}.")
 tracks = defaultdict(int)
 for (t, s) in talk_assignment.items():
@@ -146,13 +156,21 @@ for (t, s) in talk_assignment.items():
 max_tracks = max(tracks.values())
 print(f"Maximum number of tracks is {max_tracks}")
 
-# verify found solution
+#%% verify found solution
+violations = []
+overcounting_hours = 0
 for t, s in talk_assignment.items():
     if (t, s) not in F:
-        raise ValueError((t, s))
+        violations.append(f"Violation, talk assigned to unavailable slot {t}, {s}")
 for p, sched in participant_schedule.items():
+    _, curtimes = zip(*sched)
+    if len(np.unique(curtimes))!=len(curtimes):
+        overcounting_hours += len(curtimes)-len(np.unique(curtimes))
+        violations.append(f"Violation, participant assigned to multiple talks at same slot: {p}, {curtimes}")
     for (t, s) in sched:
         if (t, s) not in F or (p, t) not in I or (p, s) not in A:
-            raise ValueError(p, t, s, sched)
-
+            violations.append(f"Violation, participant assigned incorrectly {p}, {t}, {s}")
+if violations:
+    print(f"Overcounted hours: {overcounting_hours}")
 print(f"Finished, elapsed time is {int(time.time()-start_time)}s")
+# %%

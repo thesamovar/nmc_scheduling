@@ -14,6 +14,9 @@ def generate_synthetic_data(
         # Presenters, consider the first participants to be presenters
         num_talks = 1_000,
 
+        # Talk type preference
+        talk_type = stats.binom(1, 0.3), # 0=traditional, 1=interactive
+
         # Time slots and zones
         num_days = 5,
         hours_per_day = 24,
@@ -55,6 +58,7 @@ def generate_synthetic_data(
 
     # Generate talks and preferences
     participant_clusters = stats.randint(0, clusters).rvs(size=num_participants)
+    talk_type = talk_type.rvs(size=num_talks)
     talk_clusters = participant_clusters[:num_talks] # assume speakers prefer their own topic
     talk_interestingness = talk_interestingness_dist.rvs(size=num_talks)
     prefs = []
@@ -73,6 +77,7 @@ def generate_synthetic_data(
             'num_times': num_times,
             'num_talks': num_talks,
             'hours_per_day': hours_per_day,
+            'talk_type': talk_type,
             }
 
     return data
@@ -108,6 +113,11 @@ if __name__=='__main__':
     data = generate_synthetic_data(num_participants=1000, num_talks=100)
     visualise_data(data)
     with open('times_and_prefs_1k.pickle', 'wb') as f:
+        pickle.dump(data, f)
+
+    data = generate_synthetic_data(num_participants=2_000, num_talks=500)
+    visualise_data(data)
+    with open('times_and_prefs_2k_500.pickle', 'wb') as f:
         pickle.dump(data, f)
 
     data = generate_synthetic_data(num_participants=10_000, num_talks=1_000)
