@@ -18,7 +18,8 @@ class Availability:
             else:
                 self.available = available
         else:
-            self.available = []
+            self.available = set()
+        self.available = set(self.available)
 
     def from_iso(self, available, start_time):
         '''
@@ -31,12 +32,9 @@ class Availability:
             start_time = dateutil.parser.isoparse(start_time)
         available = list(map(dateutil.parser.isoparse, available))
         available = [int((t-start_time).total_seconds())//(60*60) for t in available]
-        self.available = available
+        self.available = set(available)
         return self
 
-    def __getitem__(self, i):
-        return self.available[i]
-    
     def __len__(self):
         return len(self.available)
 
@@ -65,10 +63,13 @@ class Talk:
 
 
 class Conference:
-    def __init__(self, start_time):
+    def __init__(self, start_time, end_time):
         if isinstance(start_time, str):
             start_time = dateutil.parser.isoparse(start_time)
+        if isinstance(end_time, str):
+            end_time = dateutil.parser.isoparse(end_time)
         self.start_time = start_time
+        self.end_time = end_time
         self.participants = []
         self.talks = []
     
@@ -91,7 +92,8 @@ class Conference:
 
 def load_nmc3(stats=False):
     start_time = datetime.datetime(2020, 10, 26, 0, tzinfo=datetime.timezone.utc)
-    conf = Conference(start_time)
+    end_time = datetime.datetime(2020, 10, 31, 12, tzinfo=datetime.timezone.utc)
+    conf = Conference(start_time, end_time)
     conf.talks_from_csv('submissions.csv')
 
     if stats:
@@ -103,7 +105,7 @@ def load_nmc3(stats=False):
         print("The following people have got too few available times:")
         for s in df.iloc:
             if not isinstance(s.available_dt, str) or len(s.available_dt.split(';'))<5:
-                print(f" - {s.fullname} <{s.email}>")
+                print(f"{s.fullname} <{s.email}>;")
 
         all_available = np.zeros(24*5+12)
         for sub in conf.talks:
@@ -124,6 +126,7 @@ def load_nmc3(stats=False):
 
 def load_synthetic(filename):
     start_time = datetime.datetime(2020, 10, 26, 0, tzinfo=datetime.timezone.utc)
+    end_time = datetime.datetime(2020, 10, 31, 12, tzinfo=datetime.timezone.utc)
     data = pickle.load(open(filename, 'rb'))
     free_times = data['free_times']
     prefs = data['prefs']
@@ -133,7 +136,7 @@ def load_synthetic(filename):
     num_participants = len(prefs)
     talk_type = data['talk_type']
 
-    conf = Conference(start_time)
+    conf = Conference(start_time, end_time)
 
     for i in range(num_talks):
         ft = free_times[i]
@@ -152,8 +155,8 @@ def load_synthetic(filename):
 
 
 if __name__=='__main__':
-    #conf = load_nmc3(stats=True)
-    conf = load_synthetic('times_and_prefs_2k_500.pickle')
+    conf = load_nmc3(stats=True)
+    #conf = load_synthetic('times_and_prefs_2k_500.pickle')
     if 0:
         all_available = np.zeros(24*5+12)
         for sub in conf.talks:
