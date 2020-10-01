@@ -18,8 +18,7 @@ class Availability:
             else:
                 self.available = available
         else:
-            self.available = set()
-        self.available = set(self.available)
+            self.available = []
 
     def from_iso(self, available, start_time):
         '''
@@ -32,8 +31,11 @@ class Availability:
             start_time = dateutil.parser.isoparse(start_time)
         available = list(map(dateutil.parser.isoparse, available))
         available = [int((t-start_time).total_seconds())//(60*60) for t in available]
-        self.available = set(available)
+        self.available = available
         return self
+
+    def __getitem__(self, i):
+        return self.available[i]
 
     def __len__(self):
         return len(self.available)
