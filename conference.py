@@ -72,6 +72,7 @@ class Conference:
             end_time = dateutil.parser.isoparse(end_time)
         self.start_time = start_time
         self.end_time = end_time
+        self.num_hours = int((end_time-start_time).total_seconds())//(60*60)
         self.participants = []
         self.talks = []
     
