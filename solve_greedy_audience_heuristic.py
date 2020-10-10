@@ -8,7 +8,7 @@ from generate_synthetic_data import generate_synthetic_data
 from scipy import stats
 
 
-def greedy_solution(data, talks_per_hour=2, verbose=False):
+def greedy_solution(data, talks_per_hour=3, verbose=False):
     start_time = time.time()
 
     free_times = data['free_times']
@@ -112,7 +112,7 @@ def greedy_solution(data, talks_per_hour=2, verbose=False):
     return talk_assignment, participant_schedule
 
 if __name__=='__main__':
-    data = pickle.load(open('times_and_prefs_10k.pickle', 'rb'))
+    data = pickle.load(open('times_and_prefs_2k_850.pickle', 'rb'))
 
     # data = generate_synthetic_data(
     #     num_participants=1000, num_talks=100, hours_per_day=8, num_days=2,
@@ -143,6 +143,6 @@ if __name__=='__main__':
     for p, sched in participant_schedule.items():
         for (t, s) in sched:
             audience_size[t] += 1
-    plt.hist(audience_size, label=method, bins=20)
+    plt.hist(audience_size, bins=20)
     plt.legend(loc='best')
     plt.show()

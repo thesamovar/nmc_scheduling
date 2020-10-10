@@ -120,6 +120,11 @@ if __name__=='__main__':
     with open('times_and_prefs_2k_500.pickle', 'wb') as f:
         pickle.dump(data, f)
 
+    data = generate_synthetic_data(num_participants=2_000, num_talks=850)
+    visualise_data(data)
+    with open('times_and_prefs_2k_850.pickle', 'wb') as f:
+        pickle.dump(data, f)
+
     data = generate_synthetic_data(num_participants=10_000, num_talks=1_000)
     visualise_data(data)
     with open('times_and_prefs_10k.pickle', 'wb') as f:
