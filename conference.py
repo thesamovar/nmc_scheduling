@@ -77,8 +77,9 @@ class Conference:
         self.talks = []
     
     def talks_from_dataframe(self, df):
+        df = df[df.submission_status=="Accepted"]
         self.talks_df = df
-        self.talks = [Talk.from_series(s, self.start_time) for s in df.iloc if isinstance(s.available_dt, str)]
+        self.talks = [Talk.from_series(s, self.start_time) for s in df.iloc if isinstance(s.available_dt, str) and s.submission_status=="Accepted"]
 
     def talks_from_csv(self, filename):
         df = pd.read_csv(filename)
@@ -107,6 +108,8 @@ def load_nmc3(stats=False):
         print()
         print("The following people have got too few available times:")
         for s in df.iloc:
+            if s.submission_status!="Accepted":
+                continue
             if not isinstance(s.available_dt, str) or len(s.available_dt.split(';'))<5:
                 print(f"{s.fullname} <{s.email}>;")
 
