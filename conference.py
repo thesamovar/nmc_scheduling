@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pickle
+from collections import defaultdict
 
 class Availability:
     def __init__(self, available=None, start_time=None):
@@ -76,14 +77,35 @@ class Conference:
         self.participants = []
         self.talks = []
     
-    def talks_from_dataframe(self, df):
-        df = df[df.submission_status=="Accepted"]
-        self.talks_df = df
-        self.talks = [Talk.from_series(s, self.start_time) for s in df.iloc if isinstance(s.available_dt, str) and s.submission_status=="Accepted"]
-
-    def talks_from_csv(self, filename):
-        df = pd.read_csv(filename)
-        self.talks_from_dataframe(df)
+    def from_csv(self, submissions='submissions.csv', users='users.csv', preferences='preferences.csv'):
+        self.talks_df = pd.read_csv(submissions)
+        self.talks_df = self.talks_df[self.talks_df.submission_status=="Accepted"]
+        self.users_df = pd.read_csv(users)
+        self.preferences_df = pd.read_csv(preferences)
+        # convert into object oriented format
+        self.talks = [Talk.from_series(s, self.start_time) for s in self.talks_df.iloc if isinstance(s.available_dt, str)]
+        self.id2talk = dict((talk.id, talk) for talk in self.talks)
+        self.id2user = dict((user.id, user) for user in self.users_df.iloc)
+        self.id2preference = dict((pref.id, pref.submission_ids) for pref in self.preferences_df.iloc)
+        missing_submissions = set()
+        users_missing_available = set()
+        no_corresponding_user = set()
+        for pref_row in self.preferences_df.iloc:
+            if pref_row.id not in self.id2user:
+                no_corresponding_user.add(pref_row.id)
+                continue
+            user = self.id2user[pref_row.id]
+            prefs = eval(pref_row.submission_ids)
+            missing_submissions = missing_submissions.union(set([pref for pref in prefs if pref not in self.id2talk]))
+            prefs = [self.id2talk[pref] for pref in prefs if pref in self.id2talk]
+            if isinstance(user.available_dt, str):
+                participant = Participant(available=Availability(user.available_dt, self.start_time), preferences=prefs)
+                self.participants.append(participant)
+            else:
+                users_missing_available.add(user.id)
+        print(f'Missing submission ids: {len(missing_submissions)}')
+        print(f'Users with no availability: {len(users_missing_available)}')
+        print(f'No corresponding user: {len(no_corresponding_user)}')
 
     @property
     def num_talks(self):
@@ -98,7 +120,7 @@ def load_nmc3(stats=False):
     start_time = datetime.datetime(2020, 10, 26, 0, tzinfo=datetime.timezone.utc)
     end_time = datetime.datetime(2020, 10, 31, 12, tzinfo=datetime.timezone.utc)
     conf = Conference(start_time, end_time)
-    conf.talks_from_csv('submissions.csv')
+    conf.from_csv()
 
     if stats:
         df = conf.talks_df
@@ -106,13 +128,14 @@ def load_nmc3(stats=False):
         print()
         print(df.theme.value_counts())
         print()
-        print("The following people have got too few available times:")
+        print(f'Number of valid preferences: {len(conf.participants)}')
+        print()
+        print("The following submissions have got too few available times:")
         for s in df.iloc:
             if s.submission_status!="Accepted":
                 continue
             if not isinstance(s.available_dt, str) or len(s.available_dt.split(';'))<5:
                 print(f"{s.fullname} <{s.email}>;")
-
         all_available = np.zeros(24*5+12)
         for sub in conf.talks:
             all_available[sub.available] += 1
@@ -126,6 +149,16 @@ def load_nmc3(stats=False):
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.tight_layout()
         plt.savefig('submission_stats.png')
+        # 10 most popular talks
+        popularity = defaultdict(int)
+        for p in conf.participants:
+            for t in p.preferences:
+                popularity[t] += 1
+        popularity = sorted(list(popularity.items()), key=lambda x: x[1], reverse=True)
+        print("Top 10 most popular talks:")
+        for talk, pop in popularity[:10]:
+            print(f' - [{pop} votes] {talk.title}')
+            print(f'     {talk.fullname}, {talk.coauthors}')
 
     return conf
 

@@ -28,7 +28,7 @@ def compute_participant_availability_distributions(conf):
 
 
 # Greedy scheduler
-def generate_greedy_schedule(conf, estimated_audience=20_000, strict_interactive_talk_scheduling=False, verbose=True):
+def generate_greedy_schedule(conf, estimated_audience=10_000, strict_interactive_talk_scheduling=False, verbose=True):
     start_time = time.time()
     availability_distributions = compute_participant_availability_distributions(conf)
     interactive_talks = [i for i, talk in enumerate(conf.talks) if talk.talk_format=="Interactive talk"]
@@ -57,11 +57,13 @@ def generate_greedy_schedule(conf, estimated_audience=20_000, strict_interactive
             for s in range(talks_per_hour*s, talks_per_hour*(s+1)):
                 A[p, s] = 1
         for t in p.preferences:
+            if not isinstance(t, Talk):
+                t = conf.talks[t]
             I[p, t] = 1
     for t, talk in enumerate(conf.talks):
         for s in talk.available:
             for s in range(talks_per_hour*s, talks_per_hour*(s+1)):
-                F[t, s] = 1
+                F[talk, s] = 1
     if verbose:
         print(f'Finished setting up sparse matrices. {int(time.time()-start_time)}s')
         print(f'  A has {len(A)} entries.')
@@ -110,11 +112,22 @@ def generate_greedy_schedule(conf, estimated_audience=20_000, strict_interactive
             tracks[s] += 1
         max_tracks = max(tracks.values())
         print(f"  Maximum number of tracks is {max_tracks}")
-        audience_size = np.zeros(conf.num_talks)
+        audience_size_all = defaultdict(float)
+        audience_size_traditional = defaultdict(float)
+        audience_size_interactive = defaultdict(float)
         for p, sched in participant_schedule.items():
             for (t, s) in sched:
-                audience_size[t] += 1
-        print(f"  Audience size min {audience_size.min()*scaling}, max {audience_size.max()*scaling}, mean {audience_size.mean()*scaling}, std {audience_size.std()*scaling}")
+                audience_size_all[t] += 1
+                if t.talk_format=="Traditional talk":
+                    audience_size_traditional[t] += 1
+                else:
+                    audience_size_interactive[t] += 1
+        audience_size_all = np.array(list(audience_size_all.values()))
+        audience_size_traditional = np.array(list(audience_size_traditional.values()))
+        audience_size_interactive = np.array(list(audience_size_interactive.values()))
+        print(f"  Audience size (all) min {audience_size_all.min()*scaling:.1f}, max {audience_size_all.max()*scaling:.1f}, mean {audience_size_all.mean()*scaling:.1f}, std {audience_size_all.std()*scaling:.1f}")
+        print(f"  Audience size (traditional) min {audience_size_traditional.min()*scaling:.1f}, max {audience_size_traditional.max()*scaling:.1f}, mean {audience_size_traditional.mean()*scaling:.1f}, std {audience_size_traditional.std()*scaling:.1f}")
+        print(f"  Audience size (interactive) min {audience_size_interactive.min()*scaling:.1f}, max {audience_size_interactive.max()*scaling:.1f}, mean {audience_size_interactive.mean()*scaling:.1f}, std {audience_size_interactive.std()*scaling:.1f}")
 
     # verify found solution
     for t, s in talk_assignment.items():
@@ -314,7 +327,8 @@ if __name__=='__main__':
     import matplotlib.pyplot as plt
     start_time = time.time()
     # load and convert synthetic data
-    conf = load_synthetic('times_and_prefs_2k_850.pickle')
+    #conf = load_synthetic('times_and_prefs_2k_850.pickle')
+    conf = load_nmc3()
     generate_greedy_schedule(conf)
     # dists = compute_participant_availability_distributions(conf)
     # for k, v in dists.items():

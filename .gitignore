@@ -130,4 +130,4 @@ dmypy.json
 .vscode/settings.json
 *.png
 *.pickle
-submissions.csv
+*.csv
