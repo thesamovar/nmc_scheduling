@@ -106,6 +106,10 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
     participant_schedule = defaultdict(list)
     tracks = defaultdict(int)
     remaining_slots = set(range(conf.num_hours*talks_per_hour))
+    free_participants_by_slot = defaultdict(set)
+    for p, s in A.keys():
+        free_participants_by_slot[s].add(p)
+    participants_assigned_to_talk = defaultdict(set)
     for t, _ in popularity:
         s_choose = None
         for ignore_track_limit in [False, True]:
@@ -138,7 +142,84 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
         for p in P:
             participant_schedule[p].append((t, s))
             del RA[p, s]
-
+            free_participants_by_slot[s].remove(p)
+            participants_assigned_to_talk[t, s].add(p)
+    # go through solution and try to even out sessions
+    talks_at_slot = defaultdict(list)
+    talks_in_hour = defaultdict(int)
+    for (t, s) in talk_assignment.items():
+        talks_at_slot[s].append(t)
+        talks_in_hour[s//talks_per_hour] += 1
+    nt_min = {}
+    nt_max = {}
+    def recompute_nt_min_max():
+        for h in range(conf.num_hours):
+            nt_min[h] = np.inf
+            nt_max[h] = -np.inf
+            for ds in range(talks_per_hour):
+                s = h*talks_per_hour+ds
+                nt_min[h] = min(len(talks_at_slot[s]), nt_min[h])
+                nt_max[h] = max(len(talks_at_slot[s]), nt_max[h])
+    recompute_nt_min_max()
+    did_moves = 1
+    while did_moves:
+        did_moves = 0
+        for target_session_min_size in range(talks_per_hour-1, 0, -1): # move widows to fill up sessions of size 2 first, then 1
+            for hour in range(conf.num_hours):
+            # for src_s in range(conf.num_hours*talks_per_hour):
+            #     hour = src_s//talks_per_hour
+            #     widowed = talks_in_hour[hour]%talks_per_hour==1 and len(talks_at_slot[src_s])>nt_min[hour]
+            #     if len(talks_at_slot[src_s])>=max_tracks or widowed:
+                if talks_in_hour[hour]%talks_per_hour==1: # widowed talk
+                    # identify the slot with one more than the others
+                    if len(talks_at_slot[hour*talks_per_hour])>nt_min[hour]:
+                        ds = 0
+                    elif len(talks_at_slot[hour*talks_per_hour+1])>nt_min[hour]:
+                        ds = 1
+                    else:
+                        ds = 2
+                    # identify slots we could move a talk to
+                    options = [s for s in range(conf.num_hours*talks_per_hour) if len(talks_at_slot[s])<nt_max[s//talks_per_hour] and talks_in_hour[s//talks_per_hour]%talks_per_hour>=target_session_min_size and s//talks_per_hour!=hour]
+                    if len(options)==0:
+                        break # we've done all we can
+                    # consider which talk to move
+                    src_s = hour*talks_per_hour+ds
+                    delta_audience = {}
+                    s_best = {}
+                    aud = {}
+                    for talk in talks_at_slot[src_s]:
+                        # and what is the best place we could move it to?
+                        potential_audience = {}
+                        for s in options:
+                            if F[talk, s]:
+                                potential_audience[s] = [p for p in free_participants_by_slot[s] if I[p, talk]]
+                        if len(potential_audience)==0:
+                            continue
+                        s_best[talk], aud[talk] = max(potential_audience.items(), key=lambda x: len(x[1]))
+                        delta_audience[talk] = len(aud[talk])-len(participants_assigned_to_talk[talk, src_s])
+                    if len(delta_audience)==0:
+                        continue # we can't reschedule any of these
+                    talk, _ = max(delta_audience.items(), key=lambda x: x[1])
+                    s_best = s_best[talk]
+                    aud = aud[talk]
+                    #print(f'Moving talk {talk.title} from {src_s//talks_per_hour} to {s_best//talks_per_hour} with delta {delta_audience[talk]}')
+                    did_moves += 1
+                    # remove this talk 
+                    talks_at_slot[src_s].remove(talk)
+                    talks_in_hour[src_s//talks_per_hour] -= 1
+                    for p in participants_assigned_to_talk[talk, src_s]:
+                        free_participants_by_slot[src_s].add(p)
+                        participant_schedule[p].remove((talk, src_s))
+                    del participants_assigned_to_talk[talk, src_s]
+                    # add it back
+                    talks_at_slot[s_best].append(talk)
+                    talks_in_hour[s_best//talks_per_hour] += 1
+                    talk_assignment[talk] = s_best
+                    participants_assigned_to_talk[talk, s_best] = aud
+                    for p in aud:
+                        free_participants_by_slot[s_best].remove(p)
+                        participant_schedule[p].append((talk, s_best))
+                    recompute_nt_min_max()
     # Some stats on the found solution
     scaling = estimated_audience/conf.num_participants
     if verbose:
