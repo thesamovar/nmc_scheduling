@@ -9,6 +9,7 @@ import time
 from conference import Conference, Talk, Participant, load_nmc3, load_synthetic
 import datetime
 from schedule_writer import html_schedule_dump, html_participant_dump
+import dateutil.parser
 
 def compute_participant_availability_distributions(conf):
     traditional=defaultdict(int)
@@ -30,6 +31,7 @@ def compute_participant_availability_distributions(conf):
 
 # Greedy scheduler
 def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
+                             blocked_times=None,
                              strict_interactive_talk_scheduling=False, verbose=True):
     start_time = time.time()
     availability_distributions = compute_participant_availability_distributions(conf)
@@ -50,6 +52,17 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
         print("Max hours per participant", ideal_hours/conf.num_participants)
         print("Max total hours", ideal_hours)
         print("Mean num interested", mean_num_interested)
+    # handle blocked times
+    if blocked_times is None:
+        blocked_times = set([])
+    new_blocked_times = set([])
+    for t in blocked_times:
+        if isinstance(t, str): # convert from time format to datetime
+            t = dateutil.parser.parse(t)
+        if not isinstance(t, int):
+            t = int((t-conf.start_time).total_seconds())//(60*60)
+        new_blocked_times.add(t)
+    blocked_times = new_blocked_times
     # Generate input matrices
     I = defaultdict(int)
     A = defaultdict(int)
@@ -65,6 +78,8 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
             I[p, t] = 1
     for t, talk in enumerate(conf.talks):
         for s in talk.available:
+            if s in blocked_times:
+                continue
             for s in range(talks_per_hour*s, talks_per_hour*(s+1)):
                 F[talk, s] = 1
                 talk_available_slots[talk].append(s)
@@ -75,7 +90,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
         print(f'  I has {len(I)} entries.')
 
     # First, compute how popular each talk
-    popularity = defaultdict(int)
+    popularity = dict((t, 0) for t in conf.talks)
     for (p, t) in I.keys():
         popularity[t] += 1
 
@@ -174,7 +189,14 @@ if __name__=='__main__':
     # load and convert synthetic data
     #conf = load_synthetic('times_and_prefs_2k_850.pickle')
     conf = load_nmc3()
-    conf = generate_greedy_schedule(conf, max_tracks=6)
+    blocked_times = [
+        '2020-10-26 00:00 UTC', '2020-10-26 07:00 UTC', '2020-10-26 08:00 UTC', '2020-10-26 14:00 UTC', '2020-10-26 15:00 UTC', '2020-10-26 19:00 UTC', '2020-10-26 20:00 UTC', '2020-10-26 23:00 UTC',
+        '2020-10-27 00:00 UTC', '2020-10-27 07:00 UTC', '2020-10-27 08:00 UTC', '2020-10-27 14:00 UTC', '2020-10-27 15:00 UTC', '2020-10-27 19:00 UTC', '2020-10-27 20:00 UTC', '2020-10-27 23:00 UTC',
+        '2020-10-28 00:00 UTC', '2020-10-28 07:00 UTC', '2020-10-28 08:00 UTC', '2020-10-28 14:00 UTC', '2020-10-28 15:00 UTC', '2020-10-28 19:00 UTC', '2020-10-28 20:00 UTC', '2020-10-28 23:00 UTC',
+        '2020-10-29 00:00 UTC', '2020-10-29 07:00 UTC', '2020-10-29 08:00 UTC', '2020-10-29 14:00 UTC', '2020-10-29 15:00 UTC', '2020-10-29 19:00 UTC', '2020-10-29 20:00 UTC', '2020-10-29 23:00 UTC',
+        '2020-10-30 00:00 UTC', '2020-10-30 07:00 UTC', '2020-10-30 08:00 UTC', '2020-10-30 14:00 UTC', '2020-10-30 15:00 UTC', '2020-10-30 19:00 UTC', '2020-10-30 20:00 UTC', '2020-10-30 23:00 UTC',
+        ]
+    conf = generate_greedy_schedule(conf, max_tracks=6, blocked_times=blocked_times)
     html_schedule_dump(conf)
 
     # stats on how many conflicts individual participants have
