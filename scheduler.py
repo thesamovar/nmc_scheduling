@@ -54,6 +54,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
     I = defaultdict(int)
     A = defaultdict(int)
     F = defaultdict(int)
+    talk_available_slots = defaultdict(list)
     for p in conf.participants:
         for s in p.available:
             for s in range(talks_per_hour*s, talks_per_hour*(s+1)):
@@ -66,6 +67,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
         for s in talk.available:
             for s in range(talks_per_hour*s, talks_per_hour*(s+1)):
                 F[talk, s] = 1
+                talk_available_slots[talk].append(s)
     if verbose:
         print(f'Finished setting up sparse matrices. {int(time.time()-start_time)}s')
         print(f'  A has {len(A)} entries.')
@@ -87,21 +89,40 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
     hours = 0
     talk_assignment = dict()
     participant_schedule = defaultdict(list)
+    tracks = defaultdict(int)
+    remaining_slots = set(range(conf.num_hours*talks_per_hour))
     for t, _ in popularity:
-        audience_total = defaultdict(int)
-        audience = defaultdict(list)
-        for p, s in RA.keys():
-            if (p, t) in I and (t, s) in F:
-                audience_total[s] += 1
-                audience[s].append(p)
-        if audience_total:
-            s, _ = max(audience_total.items(), key=lambda x: x[1])
-            talk_assignment[t] = s
-            P = audience[s]
-            hours += len(P)/talks_per_hour
-            for p in P:
-                participant_schedule[p].append((t, s))
-                del RA[p, s]
+        s_choose = None
+        for ignore_track_limit in [False, True]:
+            audience_total = defaultdict(int)
+            audience = defaultdict(list)
+            for p, s in RA.keys():
+                if (p, t) in I and (t, s) in F and (ignore_track_limit or s in remaining_slots):
+                    audience_total[s] += 1
+                    audience[s].append(p)
+            if audience_total:
+                aud_max = max(audience_total.values())
+                equally_good_times = [(tracks[s], s) for s, a in audience_total.items() if a==aud_max]
+            else:
+                equally_good_times = [(tracks[s], s) for s in talk_available_slots[t] if ignore_track_limit or s in remaining_slots]
+            if len(equally_good_times)==0:
+                continue
+            equally_good_times.sort(key = lambda x: x[0])
+            _, s_choose = equally_good_times[0]
+            break
+        if s_choose is None:
+            print(f"Cannot schedule talk {t.title}")
+            continue
+        s = s_choose
+        talk_assignment[t] = s
+        tracks[s] += 1
+        if tracks[s]==max_tracks:
+            remaining_slots.remove(s)
+        P = audience[s]
+        hours += len(P)/talks_per_hour
+        for p in P:
+            participant_schedule[p].append((t, s))
+            del RA[p, s]
 
     # Some stats on the found solution
     scaling = estimated_audience/conf.num_participants
@@ -153,7 +174,7 @@ if __name__=='__main__':
     # load and convert synthetic data
     #conf = load_synthetic('times_and_prefs_2k_850.pickle')
     conf = load_nmc3()
-    conf = generate_greedy_schedule(conf)
+    conf = generate_greedy_schedule(conf, max_tracks=6)
     html_schedule_dump(conf)
 
     # stats on how many conflicts individual participants have

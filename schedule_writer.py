@@ -20,6 +20,8 @@ def html_schedule_dump(conf, estimated_audience=10_000):
             audience_size[t] += 1
     max_audience_size = max(audience_size.values())
     # dump solution into an html file
+    current_day = 'This is not a day'
+    current_hour = -1
     html_rows = ''
     for s in range(conf.num_hours*talks_per_hour):
         T = set(talks[s])
@@ -30,8 +32,11 @@ def html_schedule_dump(conf, estimated_audience=10_000):
         conflict *= audience_scaling
         h = s//talks_per_hour
         m = 15*(s%talks_per_hour)
-        t = conf.start_time+datetime.timedelta(seconds=60*60*h+m*60)
-        t = t.strftime('%a %H:%M')
+        t_o = conf.start_time+datetime.timedelta(seconds=60*60*h+m*60)
+        t = t_o.strftime('%a %H:%M')
+        if t_o.strftime('%a')!=current_day:
+            current_day = t_o.strftime('%a')
+            html_rows += f'<td class="day" colspan="{max_tracks+3}">{current_day}</td>'
         row = f'<td>{t}</td><td>{int(conflict)} missed</td>'
         curtalks = talks[s]
         curtalks = sorted([(audience_size[talk], talk) for talk in curtalks], reverse=True, key=lambda x:x[0])
@@ -67,9 +72,13 @@ def html_schedule_dump(conf, estimated_audience=10_000):
                     {c}
                 </td>
                 '''
-        html_rows += f'<tr>{row}</tr>'
+        if m==30:
+            html_rows += f'<tr class="lastinsession">{row}</tr>'
+        else:
+            html_rows += f'<tr>{row}</tr>'
     track_numbers = ''.join(f'<th>Track {i+1}</th>' for i in range(max_tracks))
     css = '''
+    table { border-collapse: collapse; }
     th, td {
         text-align: left;
         padding: 8px;
@@ -78,7 +87,9 @@ def html_schedule_dump(conf, estimated_audience=10_000):
     .talk {
         width: 10em;
     }
-    tr { border-bottom: 1px solid black;}
+    tr { border-bottom: 1px dashed black; }
+    th, .lastinsession, .day { border-bottom: 1px solid black;}
+    .day { background-color: #eeccee; }
     '''
     html = f'''
     <html>
@@ -103,7 +114,7 @@ def html_schedule_dump(conf, estimated_audience=10_000):
     '''
     open('schedule.html', 'wb').write(html.encode('UTF-8'))
 
-#html_dump(conf)
+#html_schedule_dump(conf)
 
 #%%
 def html_participant_dump(conf, participant, fname):
