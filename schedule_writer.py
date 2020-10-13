@@ -38,13 +38,24 @@ def html_schedule_dump(conf, estimated_audience=10_000):
             current_day = t_o.strftime('%a')
             html_rows += f'<td class="day" colspan="{max_tracks+3}">{current_day}</td>'
         row = f'<td>{t}</td><td>{int(conflict)} missed</td>'
-        curtalks = talks[s]
-        curtalks = sorted([(audience_size[talk], talk) for talk in curtalks], reverse=True, key=lambda x:x[0])
+        #curtalks = talks[s]
+        #curtalks = sorted([(audience_size[talk], talk) for talk in curtalks], reverse=True, key=lambda x:x[0])
+        #curtalks = sorted([(audience_size[talk], talk) for talk in curtalks], key=lambda x: conf.track_assignment[x[1]])
+        # fill up curtalks and do a quick check that there are no repeats
+        curtalks = {}
+        for talk in talks[s]:
+            track = conf.track_assignment[talk]
+            if (track, talk) in curtalks:
+                print('ERROR! Multiple assignment detected')
+            curtalks[track] = talk
+        #curtalks = dict((conf.track_assignment[talk], talk) for talk in talks[s])
         total_viewers = int(sum(audience_size[talk] for talk in talks[s])*audience_scaling)
         row += f'<td>{total_viewers} viewers</td>'
         for track in range(max_tracks):
-            if track<len(curtalks):
-                size, talk = curtalks[track]
+            #if track<len(curtalks):
+            if track in curtalks:
+                talk = curtalks[track]
+                size = audience_size[talk]
                 title = talk.title
                 if len(title)>100:
                     title = f'<span title="{title}">{title[:100]}...</span>'
@@ -63,12 +74,14 @@ def html_schedule_dump(conf, estimated_audience=10_000):
                     '''
                 pop = size/max_audience_size
                 bgcol = f'hsl({180-180*pop:.0f}, 50%, 75%)'
+                rowclass = 'class="talk_cell"'
             else:
                 c = ''
                 bgcol = '#ffffff'
+                rowclass = ''
             
             row += f'''
-                <td style="background-color: {bgcol};">
+                <td {rowclass} style="background-color: {bgcol};">
                     {c}
                 </td>
                 '''
@@ -87,7 +100,11 @@ def html_schedule_dump(conf, estimated_audience=10_000):
     .talk {
         width: 10em;
     }
-    tr { border-bottom: 1px dashed black; }
+    .talk_cell {
+        border-left: 1px solid black;
+        border-right: 1px solid black;
+    }
+    tr { border-bottom: 1px dashed #888888; }
     th, .lastinsession, .day { border-bottom: 1px solid black;}
     .day { background-color: #eeccee; }
     '''

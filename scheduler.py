@@ -220,6 +220,19 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
                         free_participants_by_slot[s_best].remove(p)
                         participant_schedule[p].append((talk, s_best))
                     recompute_nt_min_max()
+
+    # create sessions by assigning to tracks
+    audience_size = defaultdict(float)
+    for p, sched in participant_schedule.items():
+        for (t, s) in sched:
+            audience_size[t] += 1
+    # initial track assignment by popularity
+    track_assignment = {}
+    for s in range(conf.num_hours*talks_per_hour):
+        talks_with_pop = sorted([(talk, audience_size[talk]) for talk in talks_at_slot[s]], key=lambda x: x[1], reverse=True)
+        for track, (talk, _) in enumerate(talks_with_pop):
+            track_assignment[talk] = track
+    
     # Some stats on the found solution
     scaling = estimated_audience/conf.num_participants
     if verbose:
@@ -246,7 +259,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
         audience_size_interactive = np.array(list(audience_size_interactive.values()))
         print(f"  Audience size (all) min {audience_size_all.min()*scaling:.1f}, max {audience_size_all.max()*scaling:.1f}, mean {audience_size_all.mean()*scaling:.1f}, std {audience_size_all.std()*scaling:.1f}")
         print(f"  Audience size (traditional) min {audience_size_traditional.min()*scaling:.1f}, max {audience_size_traditional.max()*scaling:.1f}, mean {audience_size_traditional.mean()*scaling:.1f}, std {audience_size_traditional.std()*scaling:.1f}")
-        print(f"  Audience size (interactive) min {audience_size_interactive.min()*scaling:.1f}, max {audience_size_interactive.max()*scaling:.1f}, mean {audience_size_interactive.mean()*scaling:.1f}, std {audience_size_interactive.std()*scaling:.1f}")
+        print(f"  Audience size (interactive) min {audience_size_interactive.min()*scaling:.1f}, max {audience_size_interactive.max()*scaling:.1f}, mean {audience_size_interactive.mean()*scaling:.1f}, std {audience_size_interactive.std()*scaling:.1f}")        
 
     # verify found solution
     for t, s in talk_assignment.items():
@@ -259,25 +272,90 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
 
     conf.talk_assignment = talk_assignment
     conf.participant_schedule = participant_schedule
+    conf.track_assignment = track_assignment
 
     return conf
 
+def sessions_by_similarity(conf):
+    talks_per_hour = 3
+    # generate all talks at a given slot
+    talks = defaultdict(list)
+    for talk in conf.talks:
+        if talk in conf.talk_assignment:
+            talks[conf.talk_assignment[talk]].append(talk)
+    # now look for shufflable sessions
+    J = {}
+    for h in range(conf.num_hours):
+        slots = {}
+        for ds in range(talks_per_hour):
+            s = h*talks_per_hour+ds
+            slots[ds] = list(talks[s])
+
+        if min([len(t) for t in slots.values()])<2:
+            continue
+
+        # compute Jaccard similarity between talks
+        participants_interested_in = defaultdict(set)
+        for p in conf.participants:
+            for t in p.preferences:
+                participants_interested_in[t].add(p)
+        # setup and solve model
+        model = mip.Model()
+        edge = {}
+        for ds0 in range(talks_per_hour-1):
+            for i1, t1 in enumerate(slots[ds0]):
+                for i2, t2 in enumerate(slots[ds0+1]):
+                    if (t1, t2) not in J:
+                        J[t1, t2] = len(participants_interested_in[t1] & participants_interested_in[t2])/len(participants_interested_in[t1] | participants_interested_in[t2])
+                    edge[ds0, t1, t2] = model.add_var(f'edge({ds0}, {i1}, {i2})', var_type=mip.BINARY)
+                model += mip.xsum(edge[ds0, t1, t2] for t2 in slots[ds0+1])<=1
+            for t2 in slots[ds0+1]:
+                model += mip.xsum(edge[ds0, t1, t2] for t1 in slots[ds0])<=1
+        model.objective = mip.maximize(mip.xsum(edge[ds0, t1, t2]*(1+J[t1, t2]) for ds0, t1, t2 in edge.keys()))
+        model.verbose = 0
+        opt_status_relax = model.optimize(relax=False)
+        # print(opt_status_relax)
+        # for (ds0, t1, t2), e in edge.items():
+        #     if e.x:
+        #         print(f'{ds0}: [{t1.title}]-[{t2.title}]')
+        # reallocate tracks using the model
+        succ = {}
+        for (ds0, t1, t2), e in edge.items():
+            if e.x:
+                succ[t1] = t2
+                #conf.track_assignment[t2] = conf.track_assignment[t1]
+        unassigned = set().union(*map(set, slots.values()))
+        start_track = defaultdict(int)
+        for ds0 in range(talks_per_hour):
+            for talk in slots[ds0]:
+                if talk in unassigned:
+                    conf.track_assignment[talk] = start_track[ds0]
+                    unassigned.remove(talk)
+                    start_track[ds0] += 1
+                if talk in succ:
+                    conf.track_assignment[succ[talk]] = conf.track_assignment[talk]
+                    unassigned.remove(succ[talk])
+    return conf
 
 if __name__=='__main__':
-    import pickle
+    import os, pickle
     import matplotlib.pyplot as plt
     start_time = time.time()
-    # load and convert synthetic data
-    #conf = load_synthetic('times_and_prefs_2k_850.pickle')
-    conf = load_nmc3()
-    blocked_times = [
-        '2020-10-26 00:00 UTC', '2020-10-26 07:00 UTC', '2020-10-26 08:00 UTC', '2020-10-26 14:00 UTC', '2020-10-26 15:00 UTC', '2020-10-26 19:00 UTC', '2020-10-26 20:00 UTC', '2020-10-26 23:00 UTC',
-        '2020-10-27 00:00 UTC', '2020-10-27 07:00 UTC', '2020-10-27 08:00 UTC', '2020-10-27 14:00 UTC', '2020-10-27 15:00 UTC', '2020-10-27 19:00 UTC', '2020-10-27 20:00 UTC', '2020-10-27 23:00 UTC',
-        '2020-10-28 00:00 UTC', '2020-10-28 07:00 UTC', '2020-10-28 08:00 UTC', '2020-10-28 14:00 UTC', '2020-10-28 15:00 UTC', '2020-10-28 19:00 UTC', '2020-10-28 20:00 UTC', '2020-10-28 23:00 UTC',
-        '2020-10-29 00:00 UTC', '2020-10-29 07:00 UTC', '2020-10-29 08:00 UTC', '2020-10-29 14:00 UTC', '2020-10-29 15:00 UTC', '2020-10-29 19:00 UTC', '2020-10-29 20:00 UTC', '2020-10-29 23:00 UTC',
-        '2020-10-30 00:00 UTC', '2020-10-30 07:00 UTC', '2020-10-30 08:00 UTC', '2020-10-30 14:00 UTC', '2020-10-30 15:00 UTC', '2020-10-30 19:00 UTC', '2020-10-30 20:00 UTC', '2020-10-30 23:00 UTC',
-        ]
-    conf = generate_greedy_schedule(conf, max_tracks=6, blocked_times=blocked_times)
+    if not os.path.exists('saved_conf.pickle'):
+        #conf = load_synthetic('times_and_prefs_2k_850.pickle')
+        conf = load_nmc3()
+        blocked_times = [
+            '2020-10-26 00:00 UTC', '2020-10-26 07:00 UTC', '2020-10-26 08:00 UTC', '2020-10-26 14:00 UTC', '2020-10-26 15:00 UTC', '2020-10-26 19:00 UTC', '2020-10-26 20:00 UTC', '2020-10-26 23:00 UTC',
+            '2020-10-27 00:00 UTC', '2020-10-27 07:00 UTC', '2020-10-27 08:00 UTC', '2020-10-27 14:00 UTC', '2020-10-27 15:00 UTC', '2020-10-27 19:00 UTC', '2020-10-27 20:00 UTC', '2020-10-27 23:00 UTC',
+            '2020-10-28 00:00 UTC', '2020-10-28 07:00 UTC', '2020-10-28 08:00 UTC', '2020-10-28 14:00 UTC', '2020-10-28 15:00 UTC', '2020-10-28 19:00 UTC', '2020-10-28 20:00 UTC', '2020-10-28 23:00 UTC',
+            '2020-10-29 00:00 UTC', '2020-10-29 07:00 UTC', '2020-10-29 08:00 UTC', '2020-10-29 14:00 UTC', '2020-10-29 15:00 UTC', '2020-10-29 19:00 UTC', '2020-10-29 20:00 UTC', '2020-10-29 23:00 UTC',
+            '2020-10-30 00:00 UTC', '2020-10-30 07:00 UTC', '2020-10-30 08:00 UTC', '2020-10-30 14:00 UTC', '2020-10-30 15:00 UTC', '2020-10-30 19:00 UTC', '2020-10-30 20:00 UTC', '2020-10-30 23:00 UTC',
+            ]
+        conf = generate_greedy_schedule(conf, max_tracks=6, blocked_times=blocked_times)
+        pickle.dump(conf, open('saved_conf.pickle', 'wb'))
+    else:
+        conf = pickle.load(open('saved_conf.pickle', 'rb'))
+    conf = sessions_by_similarity(conf)
     html_schedule_dump(conf)
 
     # stats on how many conflicts individual participants have
