@@ -10,6 +10,7 @@ from conference import Conference, Talk, Participant, load_nmc3, load_synthetic
 import datetime
 from schedule_writer import html_schedule_dump, html_participant_dump
 import dateutil.parser
+from topic_distance import TopicDistance
 
 def compute_participant_availability_distributions(conf):
     traditional=defaultdict(int)
@@ -276,7 +277,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
 
     return conf
 
-def sessions_by_similarity(conf):
+def sessions_by_similarity(conf, topic_distance=None):
     talks_per_hour = 3
     # generate all talks at a given slot
     talks = defaultdict(list)
@@ -285,6 +286,7 @@ def sessions_by_similarity(conf):
             talks[conf.talk_assignment[talk]].append(talk)
     # now look for shufflable sessions
     J = {}
+    conf.similarity_to_successor = {}
     for h in range(conf.num_hours):
         slots = {}
         for ds in range(talks_per_hour):
@@ -306,7 +308,10 @@ def sessions_by_similarity(conf):
             for i1, t1 in enumerate(slots[ds0]):
                 for i2, t2 in enumerate(slots[ds0+1]):
                     if (t1, t2) not in J:
-                        J[t1, t2] = len(participants_interested_in[t1] & participants_interested_in[t2])/len(participants_interested_in[t1] | participants_interested_in[t2])
+                        if topic_distance is None:
+                            J[t1, t2] = len(participants_interested_in[t1] & participants_interested_in[t2])/len(participants_interested_in[t1] | participants_interested_in[t2])
+                        else:
+                            J[t1, t2] = topic_distance[t1, t2]
                     edge[ds0, t1, t2] = model.add_var(f'edge({ds0}, {i1}, {i2})', var_type=mip.BINARY)
                 model += mip.xsum(edge[ds0, t1, t2] for t2 in slots[ds0+1])<=1
             for t2 in slots[ds0+1]:
@@ -323,6 +328,7 @@ def sessions_by_similarity(conf):
         for (ds0, t1, t2), e in edge.items():
             if e.x:
                 succ[t1] = t2
+                conf.similarity_to_successor[t1] = J[t1, t2]
                 #conf.track_assignment[t2] = conf.track_assignment[t1]
         unassigned = set().union(*map(set, slots.values()))
         start_track = defaultdict(int)
@@ -355,7 +361,7 @@ if __name__=='__main__':
         pickle.dump(conf, open('saved_conf.pickle', 'wb'))
     else:
         conf = pickle.load(open('saved_conf.pickle', 'rb'))
-    conf = sessions_by_similarity(conf)
+    conf = sessions_by_similarity(conf, topic_distance=TopicDistance())
     html_schedule_dump(conf)
 
     # stats on how many conflicts individual participants have

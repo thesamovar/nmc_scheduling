@@ -65,11 +65,17 @@ def html_schedule_dump(conf, estimated_audience=10_000):
                     coauth = talk.fullname
                 authors = f'<span title="{coauth}">{talk.fullname}</span>'
                 estim = size*audience_scaling
+                sim = conf.similarity_to_successor.get(talk, None)
+                if sim is None:
+                    sim = ''
+                else:
+                    sim = f'<br/>Similarity to next: {sim:.3f}'
                 c = f'''
                     <div class="talk">
+                        <span style="font-size: 80%">{talk.talk_format}</span><br/>
                         <b>{title}</b><br/>
                         <i>{authors}</i><br/>
-                        <span style="font-size: 80%">{int(estim)} viewers (estim.)</span>
+                        <span style="font-size: 80%">{int(estim)} viewers (estim.){sim}</span>
                     </div>
                     '''
                 pop = size/max_audience_size
