@@ -117,8 +117,10 @@ class Conference:
 
 
 def load_nmc3(stats=False):
-    start_time = datetime.datetime(2020, 10, 26, 0, tzinfo=datetime.timezone.utc)
-    end_time = datetime.datetime(2020, 10, 31, 12, tzinfo=datetime.timezone.utc)
+    # start_time = datetime.datetime(2020, 10, 26, 0, tzinfo=datetime.timezone.utc)
+    # end_time = datetime.datetime(2020, 10, 31, 12, tzinfo=datetime.timezone.utc)
+    start_time = datetime.datetime(2020, 10, 26, 14, tzinfo=datetime.timezone.utc)
+    end_time = datetime.datetime(2020, 10, 30, 23, tzinfo=datetime.timezone.utc)
     conf = Conference(start_time, end_time)
     conf.from_csv()
 

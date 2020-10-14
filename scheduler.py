@@ -463,6 +463,7 @@ if __name__=='__main__':
         pickle.dump(conf, open('saved_conf.pickle', 'wb'))
     else:
         conf = pickle.load(open('saved_conf.pickle', 'rb'))
+    html_schedule_dump(conf)
     #conf = sessions_by_similarity_pairs(conf, topic_distance=TopicDistance())
     conf = sessions_by_similarity_complete(conf, topic_distance=TopicDistance())
     html_schedule_dump(conf)
