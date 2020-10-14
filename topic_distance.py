@@ -7,6 +7,7 @@ class TopicDistance:
         self.D = D = np.load(fname_distances)
         self.talks = talks = pd.read_csv(fname_submissions)
         self.talk_to_idx = {}
+        self.missing = set()
         # np.fill_diagonal(D, 0)
         # for _ in range(100):
         #     i, j = np.unravel_index(np.argmax(D), D.shape)
@@ -16,11 +17,16 @@ class TopicDistance:
         #     D[i, j] = 0
     def __getitem__(self, ij):
         i, j = ij
+        if i in self.missing or j in self.missing:
+            return 0.0
         if i in self.talk_to_idx:
             i = self.talk_to_idx[i]
         else:
             if isinstance(i, Talk):
                 t = self.talks.where(self.talks.email==i.email).last_valid_index()
+                if t is None:
+                    self.missing.add(i)
+                    return 0.0
                 self.talk_to_idx[i] = t
                 i = t
         if j in self.talk_to_idx:
@@ -28,6 +34,9 @@ class TopicDistance:
         else:
             if isinstance(j, Talk):
                 t = self.talks.where(self.talks.email==j.email).last_valid_index()
+                if t is None:
+                    self.missing.add(j)
+                    return 0.0
                 self.talk_to_idx[j] = t
                 j = t
         return self.D[i, j]

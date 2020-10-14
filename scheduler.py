@@ -363,10 +363,12 @@ def sessions_by_similarity_complete(conf, topic_distance=None):
     if talks_per_hour==3:
         J = numba.typed.Dict()
         id2talk = {}
+        for _idx, talk in enumerate(conf.talks):
+            talk._idx = _idx
         for talk1 in conf.talks:
-            id2talk[id(talk1)] = talk1
-            for talk2 in conf.talks:
-                J[id(talk1), id(talk2)] = topic_distance[talk1, talk2]
+            id2talk[talk1._idx] = talk1
+            for _idx2, talk2 in enumerate(conf.talks):
+                J[talk1._idx, talk2._idx] = topic_distance[talk1, talk2]
     conf.similarity_to_successor = {}
     for h in range(conf.num_hours):
         slots = {}
@@ -382,7 +384,7 @@ def sessions_by_similarity_complete(conf, topic_distance=None):
 
         if talks_per_hour==3:
             for ds in range(3):
-                slots[ds] = np.array([id(t) for t in slots[ds]])
+                slots[ds] = np.array([t._idx for t in slots[ds]])
             @numba.jit(nopython=True)
             def perm(arr):
                 n = len(arr)
@@ -402,21 +404,18 @@ def sessions_by_similarity_complete(conf, topic_distance=None):
                         c[i] = 0
                         i += 1
             @numba.jit(nopython=True)
-            def partial_objective(slot0, slot1, J):
-                objective = 0.0
-                for i in range(len(slot0)):
-                    for j in range(i+1, len(slot1)):
-                        objective += J[slot0[i], slot1[j]]
-                return objective
-            @numba.jit(nopython=True)
             def find_best_session(slot0, slots1, slots2, J):
                 best_objective = -1.0
                 for slot1 in perm(slots1):
                     for slot2 in perm(slots2):
                         objective = 0.0
-                        objective += partial_objective(slot0, slot1, J)
-                        objective += partial_objective(slot1, slot2, J)
-                        objective += partial_objective(slot0, slot2, J)
+                        for i in range(max(len(slot0), len(slot1), len(slot2))):
+                            if i<len(slot0) and i<len(slot1):
+                                objective += J[slot0[i], slot1[i]]
+                            if i<len(slot0) and i<len(slot2):
+                                objective += J[slot0[i], slot2[i]]
+                            if i<len(slot1) and i<len(slot2):
+                                objective += J[slot1[i], slot2[i]]
                         if objective>best_objective:
                             best_objective = objective
                             best_session = (slot0, slot1, slot2)
