@@ -65,7 +65,10 @@ def html_schedule_dump(conf, estimated_audience=10_000):
                     coauth = talk.fullname
                 authors = f'<span title="{coauth}">{talk.fullname}</span>'
                 estim = size*audience_scaling
-                sim = conf.similarity_to_successor.get(talk, None)
+                if hasattr(conf, 'similarity_to_successor'):
+                    sim = conf.similarity_to_successor.get(talk, None)
+                else:
+                    sim = None
                 if sim is None:
                     sim = ''
                 else:

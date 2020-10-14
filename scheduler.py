@@ -11,6 +11,8 @@ import datetime
 from schedule_writer import html_schedule_dump, html_participant_dump
 import dateutil.parser
 from topic_distance import TopicDistance
+import itertools
+import numba
 
 def compute_participant_availability_distributions(conf):
     traditional=defaultdict(int)
@@ -99,6 +101,10 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
     popularity = list(popularity.items())
     popularity.sort(key=lambda x: x[1], reverse=True)
 
+    # # Sort talks in increasing order of availability (better for fitting in fixed number of tracks, worse overall)
+    # popularity = list(popularity.items())
+    # popularity.sort(key=lambda x: len(x[0].available.available))
+
     # now go through talks and assign them to their best slot, then eliminate
     # availability for participants for that slot
     RA = A.copy()
@@ -132,6 +138,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
             break
         if s_choose is None:
             print(f"Cannot schedule talk {t.title}")
+            print(f"  Available:", [avail_time for avail_time in t.available.available if avail_time not in blocked_times])
             continue
         s = s_choose
         talk_assignment[t] = s
@@ -277,7 +284,7 @@ def generate_greedy_schedule(conf, max_tracks=np.inf, estimated_audience=10_000,
 
     return conf
 
-def sessions_by_similarity(conf, topic_distance=None):
+def sessions_by_similarity_pairs(conf, topic_distance=None):
     talks_per_hour = 3
     # generate all talks at a given slot
     talks = defaultdict(list)
@@ -343,6 +350,101 @@ def sessions_by_similarity(conf, topic_distance=None):
                     unassigned.remove(succ[talk])
     return conf
 
+
+def sessions_by_similarity_complete(conf, topic_distance=None):
+    talks_per_hour = 3
+    # generate all talks at a given slot
+    talks = defaultdict(list)
+    for talk in conf.talks:
+        if talk in conf.talk_assignment:
+            talks[conf.talk_assignment[talk]].append(talk)
+    # now look for shufflable sessions
+    J = {}
+    if talks_per_hour==3:
+        J = numba.typed.Dict()
+        id2talk = {}
+        for talk1 in conf.talks:
+            id2talk[id(talk1)] = talk1
+            for talk2 in conf.talks:
+                J[id(talk1), id(talk2)] = topic_distance[talk1, talk2]
+    conf.similarity_to_successor = {}
+    for h in range(conf.num_hours):
+        slots = {}
+        for ds in range(talks_per_hour):
+            s = h*talks_per_hour+ds
+            slots[ds] = list(talks[s])
+
+        m = min([len(t) for t in slots.values()])
+        if m<2:# or m>=7:
+            continue
+
+        print(f"Reached {h}/{conf.num_hours}, size {m}")
+
+        if talks_per_hour==3:
+            for ds in range(3):
+                slots[ds] = np.array([id(t) for t in slots[ds]])
+            @numba.jit(nopython=True)
+            def perm(arr):
+                n = len(arr)
+                c = np.zeros(n+1, dtype=np.int32)
+                yield arr.copy()
+                i = 0
+                while i<n:
+                    if c[i]<i:
+                        if i%2==0:
+                            arr[0], arr[i] = arr[i], arr[0]
+                        else:
+                            arr[c[i]], arr[i] = arr[i], arr[c[i]]
+                        yield arr.copy()
+                        c[i] += 1
+                        i = 0
+                    else:
+                        c[i] = 0
+                        i += 1
+            @numba.jit(nopython=True)
+            def partial_objective(slot0, slot1, J):
+                objective = 0.0
+                for i in range(len(slot0)):
+                    for j in range(i+1, len(slot1)):
+                        objective += J[slot0[i], slot1[j]]
+                return objective
+            @numba.jit(nopython=True)
+            def find_best_session(slot0, slots1, slots2, J):
+                best_objective = -1.0
+                for slot1 in perm(slots1):
+                    for slot2 in perm(slots2):
+                        objective = 0.0
+                        objective += partial_objective(slot0, slot1, J)
+                        objective += partial_objective(slot1, slot2, J)
+                        objective += partial_objective(slot0, slot2, J)
+                        if objective>best_objective:
+                            best_objective = objective
+                            best_session = (slot0, slot1, slot2)
+                return best_objective, best_session
+            best_objective, best_session = find_best_session(slots[0], slots[1], slots[2], J)
+            best_session = [[id2talk[t] for t in slot] for slot in best_session]
+        else:
+            slot_iterators = [[slots[0]]]+[itertools.permutations(slots[ds]) for ds in range(1, talks_per_hour)]
+            session_options = itertools.product(*slot_iterators)
+            best_objective = -1
+            best_session = None
+            for session_option in session_options:
+                objective = 0.0
+                for session in zip(*session_option):
+                    for i in range(len(session)):
+                        talk_i = session[i]
+                        for j in range(i+1, len(session)):
+                            talk_j = session[j]
+                            objective += topic_distance[talk_i, talk_j]
+                if objective>best_objective:
+                    best_objective = objective
+                    best_session = session_option
+        for i, session in enumerate(zip(*best_session)):
+            for talk in session:
+                conf.track_assignment[talk] = i
+                #conf.similarity_to_successor[talk] = best_objective
+    return conf
+
 if __name__=='__main__':
     import os, pickle
     import matplotlib.pyplot as plt
@@ -361,7 +463,8 @@ if __name__=='__main__':
         pickle.dump(conf, open('saved_conf.pickle', 'wb'))
     else:
         conf = pickle.load(open('saved_conf.pickle', 'rb'))
-    conf = sessions_by_similarity(conf, topic_distance=TopicDistance())
+    #conf = sessions_by_similarity_pairs(conf, topic_distance=TopicDistance())
+    conf = sessions_by_similarity_complete(conf, topic_distance=TopicDistance())
     html_schedule_dump(conf)
 
     # stats on how many conflicts individual participants have
