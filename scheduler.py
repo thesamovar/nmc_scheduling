@@ -10,7 +10,7 @@ from conference import Conference, Talk, Participant, load_nmc3, load_synthetic
 import datetime
 from schedule_writer import html_schedule_dump, html_participant_dump
 import dateutil.parser
-from topic_distance import TopicDistance
+from topic_distance import TopicDistance, JaccardDistance, SumDistance
 import itertools
 import numba
 
@@ -442,6 +442,14 @@ def sessions_by_similarity_complete(conf, topic_distance=None):
             for talk in session:
                 conf.track_assignment[talk] = i
                 #conf.similarity_to_successor[talk] = best_objective
+            msg = 'Topic distances: '
+            for i in range(len(session)):
+                for j in range(i+1, len(session)):
+                    talk1 = session[i]
+                    talk2 = session[j]
+                    d = topic_distance[talk1, talk2]
+                    msg += f'({i}-{j}:{d:.2f}) '
+            session[0].scheduling_message = msg
     return conf
 
 if __name__=='__main__':
@@ -464,7 +472,9 @@ if __name__=='__main__':
         conf = pickle.load(open('saved_conf.pickle', 'rb'))
     html_schedule_dump(conf)
     #conf = sessions_by_similarity_pairs(conf, topic_distance=TopicDistance())
-    conf = sessions_by_similarity_complete(conf, topic_distance=TopicDistance())
+    #conf = sessions_by_similarity_complete(conf, topic_distance=TopicDistance())
+    #conf = sessions_by_similarity_complete(conf, topic_distance=JaccardDistance(conf))
+    conf = sessions_by_similarity_complete(conf, topic_distance=SumDistance(TopicDistance(), JaccardDistance(conf)))
     html_schedule_dump(conf)
 
     # stats on how many conflicts individual participants have

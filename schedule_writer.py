@@ -73,12 +73,16 @@ def html_schedule_dump(conf, estimated_audience=10_000):
                     sim = ''
                 else:
                     sim = f'<br/>Similarity to next: {sim:.3f}'
+                if hasattr(talk, 'scheduling_message'):
+                    msg = '<br/>'+talk.scheduling_message
+                else:
+                    msg = ''
                 c = f'''
                     <div class="talk">
                         <span style="font-size: 80%">{talk.talk_format}</span><br/>
                         <b>{title}</b><br/>
                         <i>{authors}</i><br/>
-                        <span style="font-size: 80%">{int(estim)} viewers (estim.){sim}</span>
+                        <span style="font-size: 80%">{int(estim)} viewers (estim.){sim}{msg}</span>
                     </div>
                     '''
                 pop = size/max_audience_size

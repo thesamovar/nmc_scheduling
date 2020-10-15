@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from conference import Talk
+from collections import defaultdict
 
 class TopicDistance:
     def __init__(self, fname_distances='topic_dist_2020_10_3.npy', fname_submissions='accepted_submissions_2020_10_3.csv'):
@@ -40,6 +41,33 @@ class TopicDistance:
                 self.talk_to_idx[j] = t
                 j = t
         return self.D[i, j]
+
+
+class JaccardDistance:
+    def __init__(self, conf):
+        self.J = defaultdict(float)
+        # compute Jaccard similarity between talks
+        participants_interested_in = defaultdict(set)
+        for p in conf.participants:
+            for t in p.preferences:
+                participants_interested_in[t].add(p)
+        for t1 in conf.talks:
+            for t2 in conf.talks:
+                I = len(participants_interested_in[t1] & participants_interested_in[t2])
+                U = len(participants_interested_in[t1] | participants_interested_in[t2])
+                if U:
+                    self.J[t1, t2] = I/U
+    def __getitem__(self, ij):
+        return self.J[ij]
+
+
+class SumDistance:
+    def __init__(self, d1, d2):
+        self.d1 = d1
+        self.d2 = d2
+    def __getitem__(self, item):
+        return self.d1[item]+self.d2[item]
+
 
 if __name__=='__main__':
     td = TopicDistance()
