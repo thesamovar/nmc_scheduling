@@ -15,10 +15,28 @@ def html_schedule_dump(conf, estimated_audience=10_000, filename='schedule.html'
     max_tracks = max(map(len, talks.values()))
     # popularity
     audience_size = defaultdict(float)
-    for p, sched in conf.participant_schedule.items():
-        for (t, s) in sched:
-            audience_size[t] += 1
-    max_audience_size = max(audience_size.values())
+    if len(audience_size):
+        for p, sched in conf.participant_schedule.items():
+            for (t, s) in sched:
+                audience_size[t] += 1
+    else:
+        available_at = defaultdict(list)
+        interested_in = defaultdict(set)
+        for p in conf.participants:
+            for h in p.available.available:
+                available_at[h].append(p)
+            for t in p.preferences:
+                interested_in[t].add(p)
+        for s in talks.keys():
+            for p in available_at[s//3]:
+                for t in talks[s]:
+                    if p in interested_in[t]:
+                        audience_size[t] += 1
+                        break
+    if audience_size:
+        max_audience_size = max(audience_size.values())
+    else:
+        max_audience_size = 1
     # dump solution into an html file
     current_day = 'This is not a day'
     current_hour = -1
