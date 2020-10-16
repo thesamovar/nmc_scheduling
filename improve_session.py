@@ -95,6 +95,10 @@ def improve_session(conf, topic_distance=None):
             J[talk1._idx, talk2._idx] = topic_distance[talk1, talk2]
 
     conf.similarity_to_successor = {}
+    goodness0_cum = 0
+    goodness_cum = 0
+    ntracks = 0
+
     for h in range(conf.num_hours):
         slots = []
         for ds in range(talks_per_hour):
@@ -114,6 +118,8 @@ def improve_session(conf, topic_distance=None):
         proposed_sessions = []
         goodness = []
 
+        goodness0_cum += goodness0
+
         # This is in a highly frustrated state, restarting helps a lot
         for i in range(10):
             new_slots = [a.copy() for a in slots]
@@ -124,22 +130,15 @@ def improve_session(conf, topic_distance=None):
             goodness.append(estimate_goodness(new_slots, J))
 
         goodness = np.array(goodness)
+        
         assert goodness.max() > goodness0
 
         slots = proposed_sessions[goodness.argmax()]
 
+        goodness_cum += goodness.max()
+        ntracks += m
+
         print(f"Coherence before {goodness0:.3}, after {goodness.max():.3}")
-        
-        # Print out the new sessions
-        """
-        for i in range(len(slots[0])):
-            print(f'--- session {i+1} ---')
-            for j in range(3):
-                try:
-                    print(id2talk[slots[j][i]].title.split('\n')[0])
-                except IndexError:
-                    continue
-        """
 
         best_session = [[id2talk[t] for t in slot] for slot in slots]
 
@@ -160,6 +159,8 @@ def improve_session(conf, topic_distance=None):
             session[0].scheduling_message = msg
             session[1].scheduling_message = ''
             session[2].scheduling_message = ''
+    print(f"Average session goodness before: {goodness0_cum / ntracks:.3}")
+    print(f"Average session goodness after: {goodness_cum / ntracks:.3}")
     return conf
 
 def main():
