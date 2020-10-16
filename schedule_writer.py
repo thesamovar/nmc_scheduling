@@ -4,7 +4,7 @@ import time
 from conference import Conference, Talk, Participant, load_nmc3, load_synthetic
 import datetime
 
-def html_schedule_dump(conf, estimated_audience=10_000):
+def html_schedule_dump(conf, estimated_audience=10_000, filename='schedule.html'):
     audience_scaling = estimated_audience/conf.num_participants
     talks_per_hour = 3
     # generate all talks at a given slot
@@ -142,7 +142,7 @@ def html_schedule_dump(conf, estimated_audience=10_000):
         </body>
     </html>
     '''
-    open('schedule.html', 'wb').write(html.encode('UTF-8'))
+    open(filename, 'wb').write(html.encode('UTF-8'))
 
 #html_schedule_dump(conf)
 
