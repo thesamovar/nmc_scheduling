@@ -162,7 +162,7 @@ def generate_greedy_schedule(conf, max_tracks=7, estimated_audience=10_000,
         # remove those talks
         for talk in best_trio:
             already_assigned.add(talk)
-    print(f'Mean metric: {np.mean(all_metrics):.1f}')
+    print(f'Mean metric: {np.mean(all_metrics):.3f}')
     # print('Max num tracks:', max(next_track.values()))
     print('Unscheduled talks:', len(conf.talks)-len(already_assigned))
     print(f'Finished. {int(time.time()-start_time)}s')
@@ -327,22 +327,112 @@ def greedy_assign_sessions(conf, max_tracks=7, estimated_audience=10_000):
     return conf
 
 
+def slot_unscheduled(conf, blocked_times, max_tracks):
+    # There are now a number of unscheduled talks. Reschedule these talks
+    # wherever they will fit.
+    new_blocked_times = set([])
+    for t in blocked_times:
+        if isinstance(t, str): # convert from time format to datetime
+            t = dateutil.parser.parse(t)
+        if not isinstance(t, int):
+            t = int((t-conf.start_time).total_seconds())//(60*60)
+        new_blocked_times.add(t)
+
+    avail_sessions = max_tracks * np.ones(conf.num_hours, dtype=np.int)
+
+    # Compute the number of sessions which can still be allotted.
+    for t, track in conf.track_assignment.items():
+        the_time = conf.talk_assignment[t] // 3
+        avail_sessions[the_time] = min(avail_sessions[the_time], max_tracks - track - 1)
+    
+    for x in new_blocked_times:
+        if x >= 0 and x < conf.num_hours:
+            avail_sessions[x] = 0
+
+    # Generate input matrices
+    S = []
+    unscheduled_talks = []
+    for talk in conf.talks:
+        if talk not in conf.talk_assignment:
+            unscheduled_talks.append(talk)
+            A = np.zeros(conf.num_hours)
+            for s in talk.available:
+                if s<0 or s>=conf.num_hours:
+                    continue
+                if avail_sessions[s] == 0:
+                    continue 
+                A[s] = 1
+            S.append(A)
+
+    S = np.array(S).copy()
+    avail_sessions = avail_sessions.copy()
+    triplets = []
+
+    # Start with triplets, end with doublets
+    rescheduled = 0
+    for ns in [3, 2]:
+        the_order = S.sum(1).argsort()
+        for n in the_order:
+            # Check if there is any way to make a triplet
+            schedulable = S.sum(0)
+            good_slots = (schedulable >= ns) & ([S[n, :].squeeze() > 0]) & (avail_sessions > 0)
+            if good_slots.any():
+                slot = np.where(good_slots[0])[0][0]
+                targets = np.where(S[:, slot] > 0)[0]
+                members = []
+                for target in targets:
+                    members.append((S[target, :].sum(), target))
+                
+                # Pick the ns members with the least availability and put them 
+                # together.
+                triplet = [x[1] for x in sorted(members)[:ns]]
+                for tri in triplet:
+                    S[tri, :] = 0
+                    rescheduled += 1
+
+                avail_sessions[slot] -= 1
+                triplets.append((slot, max_tracks - avail_sessions[slot] - 1, triplet))
+    
+    for slot, track, triplet in triplets:
+        for i, t in enumerate(triplet):
+            talk = unscheduled_talks[t]
+            conf.track_assignment[talk] = track
+            conf.talk_assignment[talk] = slot * 3 + i
+
+    print(f"=== Succesfully rescheduled {rescheduled}/{S.shape[0]} talks ===")
+    print("The following talks are unscheduled")
+    S = []
+    for talk in conf.talks:
+        if talk not in conf.talk_assignment:
+            A = np.zeros(conf.num_hours)
+            for s in talk.available:
+                if s<0 or s>=conf.num_hours:
+                    continue
+                if avail_sessions[s] == 0:
+                    continue 
+                A[s] = 1
+            S.append(A)
+            print(talk.title)
+            print(f'available {A.sum()} times')
+
+
 if __name__=='__main__':
     import os, pickle
     import matplotlib.pyplot as plt
     # Generate the thematically coherent sessions that are scheduled below
+    blocked_times = [
+        # keynote times (8am UTC not used)
+        '2020-10-26 00:00 UTC', '2020-10-26 07:00 UTC', '2020-10-26 14:00 UTC', '2020-10-26 15:00 UTC', '2020-10-26 19:00 UTC', '2020-10-26 20:00 UTC', '2020-10-26 23:00 UTC',
+        '2020-10-27 00:00 UTC', '2020-10-27 07:00 UTC', '2020-10-27 14:00 UTC', '2020-10-27 15:00 UTC', '2020-10-27 19:00 UTC', '2020-10-27 20:00 UTC', '2020-10-27 23:00 UTC',
+        '2020-10-28 00:00 UTC', '2020-10-28 07:00 UTC', '2020-10-28 14:00 UTC', '2020-10-28 15:00 UTC', '2020-10-28 19:00 UTC', '2020-10-28 20:00 UTC', '2020-10-28 23:00 UTC',
+        '2020-10-29 00:00 UTC', '2020-10-29 07:00 UTC', '2020-10-29 14:00 UTC', '2020-10-29 15:00 UTC', '2020-10-29 19:00 UTC', '2020-10-29 23:00 UTC',
+        '2020-10-30 00:00 UTC', '2020-10-30 07:00 UTC', '2020-10-30 14:00 UTC', '2020-10-30 15:00 UTC', '2020-10-30 19:00 UTC', '2020-10-30 20:00 UTC', '2020-10-30 23:00 UTC',
+        # additional times for various events
+        '2020-10-26 17:00 UTC', '2020-10-27 17:00 UTC', '2020-10-28 16:00 UTC',  '2020-10-28 18:00 UTC', '2020-10-28 21:00 UTC', '2020-10-30 16:00 UTC',
+    ]
+
     if not os.path.exists('saved_conf.pickle'):
         conf = load_nmc3()
-        blocked_times = [
-            # keynote times (8am UTC not used)
-            '2020-10-26 00:00 UTC', '2020-10-26 07:00 UTC', '2020-10-26 14:00 UTC', '2020-10-26 15:00 UTC', '2020-10-26 19:00 UTC', '2020-10-26 20:00 UTC', '2020-10-26 23:00 UTC',
-            '2020-10-27 00:00 UTC', '2020-10-27 07:00 UTC', '2020-10-27 14:00 UTC', '2020-10-27 15:00 UTC', '2020-10-27 19:00 UTC', '2020-10-27 20:00 UTC', '2020-10-27 23:00 UTC',
-            '2020-10-28 00:00 UTC', '2020-10-28 07:00 UTC', '2020-10-28 14:00 UTC', '2020-10-28 15:00 UTC', '2020-10-28 19:00 UTC', '2020-10-28 20:00 UTC', '2020-10-28 23:00 UTC',
-            '2020-10-29 00:00 UTC', '2020-10-29 07:00 UTC', '2020-10-29 14:00 UTC', '2020-10-29 15:00 UTC', '2020-10-29 19:00 UTC', '2020-10-29 20:00 UTC', '2020-10-29 23:00 UTC',
-            '2020-10-30 00:00 UTC', '2020-10-30 07:00 UTC', '2020-10-30 14:00 UTC', '2020-10-30 15:00 UTC', '2020-10-30 19:00 UTC', '2020-10-30 20:00 UTC', '2020-10-30 23:00 UTC',
-            # additional times for various events
-            '2020-10-26 17:00 UTC', '2020-10-27 17:00 UTC', '2020-10-28 16:00 UTC',  '2020-10-28 18:00 UTC', '2020-10-28 21:00 UTC', '2020-10-30 16:00 UTC',
-            ]
         # increasing min_shared_times makes scheduling easier, but increases the number of talks that aren't in a session and reduces session coherency
         conf = generate_greedy_schedule(conf, blocked_times=blocked_times, min_shared_times=1)
         pickle.dump(conf, open('saved_conf.pickle', 'wb'))
@@ -364,10 +454,17 @@ if __name__=='__main__':
             emphasis = 1, # tells the algorithm to concentrate on finding any feasible solution. doesn't make much difference I suspect.
             max_mip_gap = 0.1, # allow a solution within 10% of optimal
             max_seconds = 60*60, # limit computation time to 1h (should be enough to get a good solution)
-            )    
+            )
+
     # if running this gives an error, it's probably because there's no solution for that number of tracks and you need to increase max_tracks
-    assign_sessions(conf, max_tracks=9, relax=relax)
-    html_schedule_dump(conf, filename='schedule.html')
+    max_tracks = 9
+    assign_sessions(conf, max_tracks=max_tracks, relax=relax)
+    pickle.dump(conf, open('saved_conf_assigned.pickle', 'wb'))
+    html_schedule_dump(conf, filename=f'schedule_coherent_sessions_dedupped.html')
+
+    slot_unscheduled(conf, blocked_times, max_tracks)
+    html_schedule_dump(conf, filename=f'schedule_coherent_sessions_dedupped_reslotted.html')
+    
 
     #greedy_assign_sessions(conf)    
     #html_schedule_dump(conf, filename='schedule.html')
