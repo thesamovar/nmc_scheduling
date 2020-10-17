@@ -172,7 +172,7 @@ def generate_greedy_schedule(conf, max_tracks=7, estimated_audience=10_000,
 
 #%%
 
-def assign_sessions(conf, max_tracks=7, estimated_audience=10_000, relax=True, model_kwds=None):
+def assign_sessions(conf, max_track_vector, estimated_audience=10_000, relax=True, model_kwds=None):
 #%%
     start_time = time.time()
     free_time_distributions = compute_participant_availability_distributions(conf)
@@ -212,7 +212,7 @@ def assign_sessions(conf, max_tracks=7, estimated_audience=10_000, relax=True, m
     for s in sessions.keys():
         model += mip.xsum(S[s, t] for t in all_times if (s, t) in S)==1 # only assign talk to 1 time
     for t in all_times:
-        model += mip.xsum(S[s, t] for s in sessions.keys() if (s, t) in S)<=max_tracks # only use at most max tracks
+        model += mip.xsum(S[s, t] for s in sessions.keys() if (s, t) in S)<=max_track_vector[t] # only use at most max tracks
     for p in conf.participants:
         for t in all_times:
             model += mip.xsum(V[p, s, t] for s in sessions.keys() if (p, s, t) in V)<=1 # choose at most one slot to view at each time for each participant
@@ -251,7 +251,7 @@ def assign_sessions(conf, max_tracks=7, estimated_audience=10_000, relax=True, m
             break
         if s in session_assignment:
             continue
-        if next_track[t]>=max_tracks:
+        if next_track[t]>=max_track_vector[t]:
             continue
         session_assignment[s] = t
         next_track[t] += 1
@@ -327,7 +327,7 @@ def greedy_assign_sessions(conf, max_tracks=7, estimated_audience=10_000):
     return conf
 
 
-def slot_unscheduled(conf, blocked_times, max_tracks):
+def slot_unscheduled(conf, blocked_times, max_track_vector):
     # There are now a number of unscheduled talks. Reschedule these talks
     # wherever they will fit.
     new_blocked_times = set([])
@@ -338,7 +338,7 @@ def slot_unscheduled(conf, blocked_times, max_tracks):
             t = int((t-conf.start_time).total_seconds())//(60*60)
         new_blocked_times.add(t)
 
-    avail_sessions = max_tracks * np.ones(conf.num_hours, dtype=np.int)
+    avail_sessions = max_track_vector.copy()
 
     # Compute the number of sessions which can still be allotted.
     for t, track in conf.track_assignment.items():
@@ -416,6 +416,33 @@ def slot_unscheduled(conf, blocked_times, max_tracks):
             print(f'available {A.sum()} times')
 
 
+def reserved_times_to_max_tracks(conf, reserved_times, max_tracks):
+    max_track_vector = max_tracks * np.ones(conf.num_hours, dtype=np.int)
+    for t in reserved_times:
+        if isinstance(t, str): # convert from time format to datetime
+            t = dateutil.parser.parse(t)
+        if not isinstance(t, int):
+            t = int((t-conf.start_time).total_seconds())//(60*60)
+        max_track_vector[t] -= 1
+    return max_track_vector
+
+def dump_to_json(conf):
+    schedule = collections.defaultdict(lambda: {})
+    for t, assignment in conf.talk_assignment.items():
+        track = conf.track_assignment[t]
+        the_slot = conf.start_time + datetime.timedelta(hours=int(assignment) // 3) + datetime.timedelta(minutes=15 * int(assignment % 3))
+        d1 = the_slot.strftime("%Y-%m-%dT%H:%M:%SZ")
+        print(d1)
+        the_dict = t.__dict__
+        if 'available' in the_dict:
+            del the_dict['available']
+        if 'Unnamed: 0' in the_dict:
+            del the_dict['Unnamed: 0']
+        schedule[d1][f'track {track + 1}'] = the_dict
+        
+    with open('schedule.json', 'w') as f:
+        json.dump(schedule, f)
+
 if __name__=='__main__':
     import os, pickle
     import matplotlib.pyplot as plt
@@ -431,13 +458,30 @@ if __name__=='__main__':
         '2020-10-26 17:00 UTC', '2020-10-27 17:00 UTC', '2020-10-28 16:00 UTC',  '2020-10-28 18:00 UTC', '2020-10-28 21:00 UTC', '2020-10-30 16:00 UTC',
     ]
 
+    # We're reserving one track for ourselves at these times
+    reserved_times = [
+        '2020-10-26 21:00 UTC', 
+        '2020-10-27 18:00 UTC', 
+        '2020-10-27 17:00 UTC', 
+        # '2020-10-28 22:00 UTC', 
+        # '2020-10-29 16:00 UTC', 
+        # '2020-10-29 17:00 UTC', 
+        # '2020-10-30 17:00 UTC', 
+    ] # Unfortunately blocking all of these blows up the scheduler; we'll have to
+    # live with 10 parallel tracks at these 4 time slots.
+
     if not os.path.exists('saved_conf.pickle'):
         conf = load_nmc3()
         # increasing min_shared_times makes scheduling easier, but increases the number of talks that aren't in a session and reduces session coherency
-        conf = generate_greedy_schedule(conf, blocked_times=blocked_times, min_shared_times=1)
+        conf = generate_greedy_schedule(conf, 
+                                        blocked_times=blocked_times, 
+                                        min_shared_times=1)
         pickle.dump(conf, open('saved_conf.pickle', 'wb'))
     else:
         conf = pickle.load(open('saved_conf.pickle', 'rb'))
+
+    max_tracks = 9
+    max_track_vector = reserved_times_to_max_tracks(conf, reserved_times, max_tracks)
     
     # schedule the sessions using ILP
     # if relax==True then it will ignore integer constraints and find a solution usually within a minute or two. This solution usually seems
@@ -457,14 +501,20 @@ if __name__=='__main__':
             )
 
     # if running this gives an error, it's probably because there's no solution for that number of tracks and you need to increase max_tracks
-    max_tracks = 9
-    assign_sessions(conf, max_tracks=max_tracks, relax=relax)
+    
+    assign_sessions(conf, 
+                    max_track_vector=max_track_vector, 
+                    relax=relax)
     pickle.dump(conf, open('saved_conf_assigned.pickle', 'wb'))
     html_schedule_dump(conf, filename=f'schedule_coherent_sessions_dedupped.html')
 
-    slot_unscheduled(conf, blocked_times, max_tracks)
+    slot_unscheduled(conf, blocked_times, max_track_vector)
     html_schedule_dump(conf, filename=f'schedule_coherent_sessions_dedupped_reslotted.html')
     
+    pickle.dump(conf, open('saved_conf_assigned_reslotted.pickle', 'wb'))
+
+    # dump to json
+    dump_to_json(conf)
 
     #greedy_assign_sessions(conf)    
     #html_schedule_dump(conf, filename='schedule.html')
