@@ -77,7 +77,7 @@ class Conference:
         self.participants = []
         self.talks = []
     
-    def from_csv(self, submissions='submissions.csv', users='users.csv', preferences='preferences.csv'):
+    def from_csv(self, submissions='submissions_dedupped.csv', users='users.csv', preferences='preferences.csv'):
         self.talks_df = pd.read_csv(submissions)
         self.talks_df = self.talks_df[self.talks_df.submission_status=="Accepted"]
         self.users_df = pd.read_csv(users)
