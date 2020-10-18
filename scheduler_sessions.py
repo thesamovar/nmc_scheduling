@@ -1,4 +1,3 @@
-#%%
 import numpy as np
 from collections import defaultdict
 import time
@@ -12,6 +11,8 @@ import numba
 import mip
 import pickle
 import os
+import collections
+import json
 
 def compute_participant_availability_distributions(conf):
     traditional=defaultdict(int)
@@ -143,22 +144,42 @@ def generate_greedy_schedule(conf, max_tracks=7, estimated_audience=10_000,
                 if len(times)<min_shared_times:
                     continue
                 metric = session_metric(talk1, talk2, talk3)
-                possible_sessions.append((talk1, talk2, talk3, metric))
-    possible_sessions.sort(key=lambda x: x[3], reverse=True)
+                possible_sessions.append(((talk1, talk2, talk3), metric))
+    possible_sessions.sort(key=lambda x: x[1], reverse=True)
+    # try sessions of length 2 or 1 (commented out because these sessions are pretty bad, better to find another way)
+    # possible_sessions2 = []
+    # for talk1 in conf.talks:
+    #     for talk2 in with_shared_schedule[talk1]:
+    #         if talk2._idx<=talk1._idx:
+    #             continue
+    #         metric = pairwise[talk1, talk2]
+    #         possible_sessions2.append(((talk1, talk2), metric))
+    # possible_sessions2.sort(key=lambda x: x[1], reverse=True)
+    # possible_sessions.extend(possible_sessions2)
+    # for talk in conf.talks:
+    #     possible_sessions.append(((talk,), 0))
     already_assigned = set()
     all_metrics = []
-    for talk1, talk2, talk3, best_metric in possible_sessions:
-        if talk1 in already_assigned or talk2 in already_assigned or talk3 in already_assigned:
+    for session, best_metric in possible_sessions:
+        if any(talk in already_assigned for talk in session):
             continue
         all_metrics.append(best_metric)
-        best_trio = (talk1, talk2, talk3)
-        best_times = schedule_overlap[talk1, talk2].intersection(talk_available_times[talk3])
+        best_trio = session
+        if len(session)==3:
+            talk1, talk2, talk3 = session
+            best_times = schedule_overlap[talk1, talk2].intersection(talk_available_times[talk3])
+        elif len(session)==2:
+            talk1, talk2 = session
+            best_times = schedule_overlap[talk1, talk2]
+        else:
+            talk1, = session
+            best_times = talk_available_times[talk1]
         msg = f'Metric={best_metric}, number of times={len(best_times)}\n'
         for t in best_trio:
             msg += ' - '+t.title[:150]+'\n'
         sessions_file.write(msg.encode('UTF-8'))
         alternate_times[best_trio] = best_times
-        best_trio[0].scheduling_message = f"Session metric: {best_metric}"
+        best_trio[0].scheduling_message = f"Session metric: {best_metric:.2f}"
         # remove those talks
         for talk in best_trio:
             already_assigned.add(talk)
@@ -170,10 +191,8 @@ def generate_greedy_schedule(conf, max_tracks=7, estimated_audience=10_000,
     conf.potential_audience = potential_audience
     return conf
 
-#%%
 
-def assign_sessions(conf, max_track_vector, estimated_audience=10_000, relax=True, model_kwds=None):
-#%%
+def assign_sessions(conf, max_track_vector, estimated_audience=10_000, relax=True, model_kwds=None, optkwds=None):
     start_time = time.time()
     free_time_distributions = compute_participant_availability_distributions(conf)
     freedist = free_time_distributions['traditional']
@@ -226,22 +245,21 @@ def assign_sessions(conf, max_track_vector, estimated_audience=10_000, relax=Tru
     objfun = watch_hours#-L1
     model.objective = mip.maximize(objfun)
     # Solve it with relaxed model first to get upper bound
-    # model.emphasis = 1 # feasibility first
-    # model.max_mip_gap = 0.1 # allow a solution within 10% of optimal
-    # model.max_seconds = 60*60
-    # model.max_mip_gap = 0.2
-    # model.max_seconds = 10*60
-    # model.cutoff = -2e6 # not sure if this is a good idea or not...
+    _optkwds = dict(relax=relax)
+    if optkwds is not None:
+        _optkwds.update(optkwds)
     if model_kwds is not None:
         for k, v in model_kwds.items():
             setattr(model, k, v)
-    opt_status = model.optimize(relax=relax)
+        if 'max_seconds' in model_kwds:
+            optkwds['max_seconds'] = model_kwds['max_seconds']
+    opt_status = model.optimize(**_optkwds)
     print(opt_status)
     print(f'Expected watch hours assuming audience of {estimated_audience} is {model.objective_value*estimated_audience/conf.num_participants**2}')
     # plt.hist([v.x for v in V.values()], alpha=0.7)
     # plt.hist([v.x for v in S.values()], alpha=0.7)
     # plt.show()
-#%%
+
     # Convert it into a schedule (allow for possibility it's not binary)
     next_track = defaultdict(int)
     ordered_assignments = sorted(S.keys(), key=lambda x: S[x].x, reverse=True)
@@ -268,7 +286,6 @@ def assign_sessions(conf, max_track_vector, estimated_audience=10_000, relax=Tru
     # importlib.reload(schedule_writer)
     # from schedule_writer import html_schedule_dump
     # html_schedule_dump(conf)
-#%%
 
 
 def greedy_assign_sessions(conf, max_tracks=7, estimated_audience=10_000):
@@ -370,7 +387,7 @@ def slot_unscheduled(conf, blocked_times, max_track_vector):
 
     # Start with triplets, end with doublets
     rescheduled = 0
-    for ns in [3, 2]:
+    for ns in [3, 2, 1]:
         the_order = S.sum(1).argsort()
         for n in the_order:
             # Check if there is any way to make a triplet
@@ -432,7 +449,7 @@ def dump_to_json(conf):
         track = conf.track_assignment[t]
         the_slot = conf.start_time + datetime.timedelta(hours=int(assignment) // 3) + datetime.timedelta(minutes=15 * int(assignment % 3))
         d1 = the_slot.strftime("%Y-%m-%dT%H:%M:%SZ")
-        print(d1)
+        # print(d1)
         the_dict = t.__dict__
         if 'available' in the_dict:
             del the_dict['available']
@@ -475,7 +492,7 @@ if __name__=='__main__':
         # increasing min_shared_times makes scheduling easier, but increases the number of talks that aren't in a session and reduces session coherency
         conf = generate_greedy_schedule(conf, 
                                         blocked_times=blocked_times, 
-                                        min_shared_times=1)
+                                        min_shared_times=3)
         pickle.dump(conf, open('saved_conf.pickle', 'wb'))
     else:
         conf = pickle.load(open('saved_conf.pickle', 'rb'))
@@ -490,22 +507,36 @@ if __name__=='__main__':
     # setting relax=False will use the integer constraints which will take a lot longer. A complete run probably around 2-3h, but you can
     # set an upper bound to the computation time and return the best solution found so far. You can also set a bound to how close to the
     # relaxed version you're happy with (e.g. max_mip_gap=0.1 will stop if it finds an integer solution within 10% of the relaxed version).
-    relax = True
+    relax = False
     if relax:
         model_kwds = None
+        optkwds = None
     else:
+        optkwds = dict(
+            max_seconds_same_incumbent=300,
+            #max_nodes_same_incumbent=10,
+            max_solutions=1, # increase this to get better solutions but take longer
+            #max_nodes=10,
+        )
         model_kwds = dict( # only relevant if relax=False
             emphasis = 1, # tells the algorithm to concentrate on finding any feasible solution. doesn't make much difference I suspect.
-            max_mip_gap = 0.1, # allow a solution within 10% of optimal
-            max_seconds = 60*60, # limit computation time to 1h (should be enough to get a good solution)
+            max_mip_gap = 0.05, # allow a solution within 10% of optimal
+            opt_tol = 0.05,
+            max_seconds = 10*60, # limit computation time to 10m (should be enough to get a good solution)
+            #cut_passes = 0,
+            #cuts = 0,
+            #max_nodes = 0,
             )
 
     # if running this gives an error, it's probably because there's no solution for that number of tracks and you need to increase max_tracks
     
-    assign_sessions(conf, 
-                    max_track_vector=max_track_vector, 
-                    relax=relax)
-    pickle.dump(conf, open('saved_conf_assigned.pickle', 'wb'))
+    if not os.path.exists('saved_conf_assigned.pickle'):
+        assign_sessions(conf, 
+                        max_track_vector=max_track_vector, 
+                        relax=relax, model_kwds=model_kwds, optkwds=optkwds)
+        pickle.dump(conf, open('saved_conf_assigned.pickle', 'wb'))
+    else:
+        conf = pickle.load(open('saved_conf_assigned.pickle', 'rb'))
     html_schedule_dump(conf, filename=f'schedule_coherent_sessions_dedupped.html')
 
     slot_unscheduled(conf, blocked_times, max_track_vector)

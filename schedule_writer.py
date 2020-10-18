@@ -75,6 +75,8 @@ def html_schedule_dump(conf, estimated_audience=10_000, filename='schedule.html'
                 talk = curtalks[track]
                 size = audience_size[talk]
                 title = talk.title
+                if title==title.upper():
+                    title = title.title()
                 if len(title)>100:
                     title = f'<span title="{title}">{title[:100]}...</span>'
                 if isinstance(talk.coauthors, str):
