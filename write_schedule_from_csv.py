@@ -44,7 +44,8 @@ def write_static_html_schedule(filename='submissions-final.csv'):
                     details.append(f'<div class="coauthors">{talk.coauthors}</div>')
                     details_summary.append('Coauthors')
                 if isinstance(talk.abstract, str):
-                    details.append(f'<div class="abstract">{talk.abstract}</div>')
+                    abstract = talk.abstract.replace('\n', '<br/>')
+                    details.append(f'<div class="abstract">{abstract}</div>')
                     details_summary.append('Abstract')
                 details = '<br/>'.join(details)
                 details_summary = ', '.join(details_summary)
