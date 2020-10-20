@@ -29,10 +29,11 @@ def write_static_html_schedule(filename='submissions-final.csv'):
         </td>
         '''
         row = [cell]
+        has_contributed = any(talk_at[t, track].talk_format in ('Interactive talk', 'Traditional talk') for track in range(num_tracks) if (t, track) in talk_at)
+        spanned_tracks = set()
         for track in range(num_tracks):
             if (t, track) in talk_at:
                 talk = talk_at[t, track]
-                #print(t, track, talk.talk_format, talk.fullname, talk.title)
                 cell = [getattr(talk, v) for v in ['title', 'fullname'] if isinstance(getattr(talk, v), str)]
                 if len(cell)==2 and cell[0]==cell[1]:
                     cell = [cell[0]]
@@ -58,15 +59,20 @@ def write_static_html_schedule(filename='submissions-final.csv'):
                         {details}
                     </details>
                     '''
+                if talk.talk_format not in ('Interactive talk', 'Traditional talk') and has_contributed:
+                    span = 'rowspan="3"'
+                    spanned_tracks.add(track)
+                else:
+                    span = ''
                 cell = f'''
-                <td class="talk_cell {talk.talk_format.replace(' ', '_')}">
+                <td class="talk_cell {talk.talk_format.replace(' ', '_')}" {span}>
                     <i>{talk.talk_format}</i><br/>
                     {cell}
                     {details}
                 </td>
                 '''
                 row.append(cell)
-            else:
+            elif track not in spanned_tracks:
                 row.append('<td></td>')
         if tnext is None or tnext.hour!=t.hour:
             rowclass = 'class="lastinsession"'
