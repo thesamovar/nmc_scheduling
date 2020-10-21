@@ -81,6 +81,7 @@ def write_static_html_schedule(filename='submissions-final.csv'):
                 talk = talk_at[t, track]
                 ongoing[track] = talk
                 cell = [getattr(talk, v) for v in ['title', 'fullname'] if isinstance(getattr(talk, v), str)]
+                cell = [(c.title() if c.upper()==c else c) for c in cell]
                 if len(cell)==2 and cell[0]==cell[1]:
                     cell = [cell[0]]
                 cell[0] = f'<b>{cell[0]}</b>'
